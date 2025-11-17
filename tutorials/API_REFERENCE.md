@@ -334,6 +334,27 @@ data = load_micropatterns(
 
 ## Utilities
 
+### Hyperparameter Grid Search
+
+```python
+from marimo_utils import generate_hyperparameter_combinations
+
+# Generate all combinations of hyperparameters
+param_grid = {
+    "learning_rate": [1e-3, 1e-4, 1e-5],
+    "n_channels": [16, 32, 64],
+    "fire_rate": [0.5, 1.0]
+}
+
+combinations = generate_hyperparameter_combinations(param_grid)
+# Returns: [{"learning_rate": 1e-3, "n_channels": 16, "fire_rate": 0.5}, ...]
+
+# Use in experiments
+for i, params in enumerate(combinations):
+    model = NCA(N_CHANNELS=params["n_channels"], FIRE_RATE=params["fire_rate"])
+    # ... train with params["learning_rate"]
+```
+
 ### Visualization
 
 ```python

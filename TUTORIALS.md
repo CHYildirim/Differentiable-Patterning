@@ -104,6 +104,17 @@ Work through Tutorials 1-6 in order.
 
 **Best for:** PhD students starting research in this area, comprehensive understanding
 
+## Additional Tools
+
+### Marimo Notebooks
+The codebase includes support for [marimo](https://marimo.io/) - a reactive Python notebook alternative to Jupyter:
+- `Experiments/__marimo__/` - Contains marimo session files for interactive exploration
+- `marimo_utils.py` - Helper utilities for hyperparameter grid search and visualization
+
+### Helpful Utilities
+- `marimo_utils.generate_hyperparameter_combinations()` - Generate all combinations of hyperparameters for systematic experiments
+- Use for parameter sweeps and ablation studies
+
 ## After the Tutorials
 
 Once you complete the tutorials, explore:
@@ -119,12 +130,16 @@ Located in `demo/`:
 - `train_nca_to_pde_demo.py` - Train NCA to mimic PDE
 
 ### Experiments Directory
-Browse `Experiments/` to see complete research projects:
+Browse `Experiments/` to see complete research projects (organized by topic):
 - `emoji/` - Training NCAs on emoji datasets
-- `micropatterns/` - Learning biological micropatterns
-- `texture/` - Texture synthesis
-- `pde/` - Various PDE experiments
-- And many more!
+- `micropatterns/` - Learning biological micropatterns (individual shapes, radii, averaging)
+- `multispecies/` - Multi-species and multi-stable pattern formation
+- `texture/` - Texture synthesis experiments
+- `pde/` - PDE learning and parameter fitting
+- `nca_architecture_tests/` - Testing different NCA architectures (kaNCA, multi-scale)
+- `sae/` - Sparse autoencoder experiments with NCAs
+- `stability/` - Fixed point and stability analysis
+- `optimizer_test/` - Comparing different optimization strategies
 
 ## Key Concepts
 

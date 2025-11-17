@@ -17,10 +17,21 @@ How to organize experiments and conduct research with this codebase.
 
 ### Recommended Directory Structure
 
+The codebase organizes experiments by topic. Follow this pattern for your work:
+
 ```
 Differentiable-Patterning/
 ├── Experiments/
-│   └── my_project/              # Your research project
+│   ├── emoji/                   # Existing: emoji training
+│   ├── micropatterns/           # Existing: biological micropatterns
+│   ├── multispecies/            # Existing: multi-species systems
+│   ├── texture/                 # Existing: texture synthesis
+│   ├── pde/                     # Existing: PDE experiments
+│   ├── nca_architecture_tests/  # Existing: architecture comparisons
+│   ├── sae/                     # Existing: sparse autoencoders
+│   ├── stability/               # Existing: stability analysis
+│   ├── optimizer_test/          # Existing: optimizer comparisons
+│   └── my_project/              # Your new research project
 │       ├── README.md           # Project description
 │       ├── config/             # Configuration files
 │       │   ├── base_config.py
@@ -41,8 +52,15 @@ Differentiable-Patterning/
 
 ### Creating a New Project
 
+Choose an appropriate subdirectory based on your research topic, or create a new one:
+
 ```bash
 cd Experiments/
+
+# Option 1: Add to existing category
+cd micropatterns/  # or emoji/, pde/, etc.
+
+# Option 2: Create new category for your project
 mkdir my_project
 cd my_project
 
