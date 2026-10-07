@@ -29,3 +29,5 @@ pyparsing
 PyYAML
 pytest
 marimo
+omegaconf
+python-dotenv

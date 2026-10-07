@@ -1,4 +1,4 @@
-experiment_name: emoji_baseline_training_sweep
+experiment_name: emoji_baseline_training_sweep-
 entrypoint: Experiments.emoji.train:run
 output_subdir: generated/emoji_baseline_training_sweep
 seed_mode: index

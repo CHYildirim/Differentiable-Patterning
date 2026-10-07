@@ -1,0 +1,230 @@
+nohup: ignoring input
+JAX-Geraete: [CudaDevice(id=0)]
+Modelle:
+  2attr_replicate_gNCA         models/local/emoji_multi_attractor_example_v2/bundles/nca-emoji/emoji-multi-attractor-example-v2/20260830T174447Z-cfga63e288e1e9e-db1f45fc
+  2attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260929T132309Z-cfg372a0c3f14b5-e84bd156
+  3attr_replicate_gNCA         models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260921T212103Z-cfg9b176dd6be39-b584de1c
+  3attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260909T232154Z-cfg23d2f219b302-df559ea2
+  4attr_replicate_gNCA         models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260927T020111Z-cfg1be8b5068de7-6ada72d2
+  4attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260910T173700Z-cfgf1ae05f3a10d-be54beee
+Emojis: demo/demo_data/Emojis
+
+==================== 2attr_replicate_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_example_v2/bundles/nca-emoji/emoji-multi-attractor-example-v2/20260830T174447Z-cfga63e288e1e9e-db1f45fc
+gNCA, Padding REPLICATE, Attraktoren ['CRAB', 'MICROBE'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+Wachse 2 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  fertig in 3.6 s
+  CRAB ohne Reiz nach 256 Schritten: CRAB (eigener Anteil 0.98)
+  MICROBE ohne Reiz nach 256 Schritten: MICROBE (eigener Anteil 0.99)
+  CRAB: 15 Reizpositionen
+  MICROBE: 19 Reizpositionen
+  Kontrollen ohne Reiz: 16 Laeufe, 3,088 Laufschritte, 1 Batches
+    Batch 1/1: 0.0 min, Rest ~0.0 min
+  Screen: 1088 Laeufe, 254,864 Laufschritte, 9 Batches
+    Batch 1/9: 0.3 min, Rest ~3.2 min
+    Batch 2/9: 0.6 min, Rest ~2.4 min
+    Batch 3/9: 0.8 min, Rest ~2.0 min
+    Batch 4/9: 1.2 min, Rest ~1.8 min
+    Batch 5/9: 1.5 min, Rest ~1.4 min
+    Batch 6/9: 1.8 min, Rest ~1.1 min
+    Batch 7/9: 2.2 min, Rest ~0.7 min
+    Batch 8/9: 2.6 min, Rest ~0.2 min
+    Batch 9/9: 3.0 min, Rest ~0.0 min
+  Verfeinerung: 0 von 136 Gruppen haben mindestens einmal umgeschaltet
+  Verfeinerung: nichts zu rechnen (alles vorhanden)
+  2attr_replicate_gNCA fertig in 3.2 min -> inference_outputs/signal_threshold_scan/2attr_replicate_gNCA/report.md
+
+==================== 2attr_circular_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260929T132309Z-cfg372a0c3f14b5-e84bd156
+gNCA, Padding CIRCULAR, Attraktoren ['CRAB', 'MICROBE'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+Wachse 2 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  fertig in 2.7 s
+  CRAB ohne Reiz nach 256 Schritten: CRAB (eigener Anteil 0.98)
+  MICROBE ohne Reiz nach 256 Schritten: MICROBE (eigener Anteil 0.95)
+  CRAB: 15 Reizpositionen
+  MICROBE: 18 Reizpositionen
+  Kontrollen ohne Reiz: 16 Laeufe, 3,088 Laufschritte, 1 Batches
+    Batch 1/1: 0.0 min, Rest ~0.0 min
+  Screen: 1056 Laeufe, 247,368 Laufschritte, 9 Batches
+    Batch 1/9: 0.2 min, Rest ~2.2 min
+    Batch 2/9: 0.5 min, Rest ~2.0 min
+    Batch 3/9: 0.7 min, Rest ~1.7 min
+    Batch 4/9: 1.0 min, Rest ~1.4 min
+    Batch 5/9: 1.3 min, Rest ~1.2 min
+    Batch 6/9: 1.5 min, Rest ~0.9 min
+    Batch 7/9: 2.0 min, Rest ~0.5 min
+    Batch 8/9: 2.4 min, Rest ~0.1 min
+    Batch 9/9: 2.7 min, Rest ~0.0 min
+  Verfeinerung: 14 von 132 Gruppen haben mindestens einmal umgeschaltet
+  Verfeinerung: 392 Laeufe, 89,712 Laufschritte, 4 Batches
+    Batch 1/4: 0.2 min, Rest ~0.6 min
+    Batch 2/4: 0.5 min, Rest ~0.4 min
+    Batch 3/4: 0.9 min, Rest ~0.0 min
+    Batch 4/4: 1.3 min, Rest ~0.0 min
+  2attr_circular_gNCA fertig in 4.2 min -> inference_outputs/signal_threshold_scan/2attr_circular_gNCA/report.md
+
+==================== 3attr_replicate_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260921T212103Z-cfg9b176dd6be39-b584de1c
+gNCA, Padding REPLICATE, Attraktoren ['CRAB', 'MICROBE', 'ROOSTER'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+  ROOSTER: Seed-RGBA [210, 120, 86, 255]
+Wachse 3 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  fertig in 5.2 s
+  CRAB ohne Reiz nach 256 Schritten: CRAB (eigener Anteil 0.96)
+  MICROBE ohne Reiz nach 256 Schritten: MICROBE (eigener Anteil 0.99)
+  ROOSTER ohne Reiz nach 256 Schritten: ROOSTER (eigener Anteil 0.96)
+  CRAB: 16 Reizpositionen
+  MICROBE: 19 Reizpositionen
+  ROOSTER: 14 Reizpositionen
+  Kontrollen ohne Reiz: 24 Laeufe, 4,632 Laufschritte, 1 Batches
+    Batch 1/1: 0.1 min, Rest ~0.0 min
+  Screen: 3136 Laeufe, 734,608 Laufschritte, 25 Batches
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1473, in main
+    write_summary(results, failed, OUTPUT_ROOT / "summary_all_models.md",
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 871, in run_model
+    for gk, conds in groups.items():
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 747, in run_jobs
+    for i, (c, r) in enumerate(batch):
+                                ^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 271, in _call
+    marker.block_until_ready()
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: [0] Failed to load in-memory CUBIN (compiled for a different GPU?).: CUDA_ERROR_OUT_OF_MEMORY: out of memory [executable_name='jit_signal_step']
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1473, in main
+    write_summary(results, failed, OUTPUT_ROOT / "summary_all_models.md",
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 834, in run_model
+    label = ctx.class_names[int(lab[i])]
+                ~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 271, in _call
+    marker.block_until_ready()
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: [0] Failed to load in-memory CUBIN (compiled for a different GPU?).: CUDA_ERROR_OUT_OF_MEMORY: out of memory [executable_name='jit_classify_batch']
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1473, in main
+    write_summary(results, failed, OUTPUT_ROOT / "summary_all_models.md",
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 834, in run_model
+    label = ctx.class_names[int(lab[i])]
+                ~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 271, in _call
+    marker.block_until_ready()
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: [0] Failed to load in-memory CUBIN (compiled for a different GPU?).: CUDA_ERROR_OUT_OF_MEMORY: out of memory [executable_name='jit_classify_batch']
+E1006 21:56:38.392034 2945679 cuda_fft.cc:257] Failed to make cuFFT batched plan: 5
+E1006 21:56:38.392087 2945679 cuda_fft.cc:324] Initialize Params: rank: 2 elem_count: 140 input_embed: 140 input_stride: 1 input_distance: 19600 output_embed: 140 output_stride: 1 output_distance: 9940 batch_count: 16
+E1006 21:56:38.392092 2945679 cuda_fft.cc:333] Failed to initialize batched cufft plan with customized allocator: Failed to make cuFFT batched plan.
+E1006 21:56:38.392746 2945679 status_macros.cc:58] INTERNAL: RET_CHECK failure (external/xla/xla/backends/gpu/runtime/fft_thunk.cc:200) fft_plan != nullptr Failed to create cuFFT batched plan with scratch allocator
+=== Source Location Trace: ===
+external/xla/xla/status_macros.cc:81
+
+*** Begin stack trace ***
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	PyObject_Vectorcall
+	_PyEval_EvalFrameDefault
+	_PyObject_Call_Prepend
+	
+	PyObject_Call
+	_PyEval_EvalFrameDefault
+	PyObject_Vectorcall
+	
+	
+	PyObject_Vectorcall
+	_PyEval_EvalFrameDefault
+	PyEval_EvalCode
+	
+	
+	_PyRun_SimpleFileObject
+	_PyRun_AnyFileObject
+	Py_RunMain
+	Py_BytesMain
+	
+	__libc_start_main
+	_start
+*** End stack trace ***
+
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1473, in main
+    write_summary(results, failed, OUTPUT_ROOT / "summary_all_models.md",
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 831, in run_model
+    valid_sources = []
+            ^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 547, in grow_states
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 271, in _call
+    marker.block_until_ready()
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: [0] Failed to get module function input_concatenate_fusion: CUDA_ERROR_OUT_OF_MEMORY: out of memory [executable_name='jit_grow_step']
+  3attr_replicate_gNCA uebersprungen wegen Fehler; weiter mit dem naechsten Modell.
+
+==================== 3attr_circular_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260909T232154Z-cfg23d2f219b302-df559ea2
+gNCA, Padding CIRCULAR, Attraktoren ['CRAB', 'MICROBE', 'ROOSTER'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+  ROOSTER: Seed-RGBA [210, 120, 86, 255]
+Wachse 3 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  fertig in 3.9 s
+  3attr_circular_gNCA uebersprungen wegen Fehler; weiter mit dem naechsten Modell.
+
+==================== 4attr_replicate_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260927T020111Z-cfg1be8b5068de7-6ada72d2
+gNCA, Padding REPLICATE, Attraktoren ['CRAB', 'MICROBE', 'ROOSTER', 'ALIEN_MONSTER'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+  ROOSTER: Seed-RGBA [210, 120, 86, 255]
+  ALIEN_MONSTER: Seed-RGBA [187, 105, 255, 255]
+Wachse 4 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  fertig in 6.3 s
+  4attr_replicate_gNCA uebersprungen wegen Fehler; weiter mit dem naechsten Modell.
+
+==================== 4attr_circular_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260910T173700Z-cfgf1ae05f3a10d-be54beee
+gNCA, Padding CIRCULAR, Attraktoren ['CRAB', 'MICROBE', 'ROOSTER', 'ALIEN_MONSTER'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+  ROOSTER: Seed-RGBA [210, 120, 86, 255]
+  ALIEN_MONSTER: Seed-RGBA [187, 105, 255, 255]
+Wachse 4 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+  4attr_circular_gNCA uebersprungen wegen Fehler; weiter mit dem naechsten Modell.
+
+Fertig in 7.9 min. Zusammenfassung: inference_outputs/signal_threshold_scan/summary_all_models.md

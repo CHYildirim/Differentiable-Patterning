@@ -1,17 +1,68 @@
-experiment_name: emoji_multi_attractor_example
+experiment_name: emoji_multi_attractor_2_3_4
+
 entrypoint: Experiments.emoji.train:run
-output_subdir: generated/emoji_multi_attractor_example
+
+output_subdir: generated/emoji_multi_attractor_2_3_4
+
 seed_mode: index
-grid:
+
+grid: 
+
+  run.repeat: [0, 1]
+
   data.emoji.task: [multi_attractor]
+
   data.emoji.pairs:
-    - - initial: {image: crab.png, mode: patch, size: 12}
+
+    - - initial: {image: crab.png, mode: patch, size: 1}
         target: crab.png
-      - initial: {image: microbe.png, mode: patch, size: 12}
+
+      - initial: {image: microbe.png, mode: patch, size: 1}
         target: microbe.png
+
+    # ==========================================
+    # RUN 1 — 3 ATTRACTORS
+    # ==========================================
+    - - initial: {image: crab.png, mode: patch, size: 1}
+        target: crab.png
+
+      - initial: {image: microbe.png, mode: patch, size: 1}
+        target: microbe.png
+
+      - initial: {image: rooster.png, mode: patch, size: 1}
+        target: rooster.png
+
+
+    # ==========================================
+    # RUN 2 — 4 ATTRACTORS
+    # ==========================================
+    - - initial: {image: crab.png, mode: patch, size: 1}
+        target: crab.png
+
+      - initial: {image: microbe.png, mode: patch, size: 1}
+        target: microbe.png
+
+      - initial: {image: rooster.png, mode: patch, size: 1}
+        target: rooster.png
+
+      - initial: {image: alien_monster.png, mode: patch, size: 1}
+        target: alien_monster.png
+
+
   data.emoji.target_repeats: [2]
+
   data.batches: [2]
+
   logging.wandb.project: [NCA-emoji]
-  logging.wandb.group: [emoji-multi-attractor-example]
-  model.family: [NCA, gNCA]
-  run.iterations: [8000]
+
+  logging.wandb.group: [emoji-multi-attractor-2-3-4]
+
+  model.family: [gNCA]
+
+  model.channels: [64]
+
+  model.padding: [REPLICATE, CIRCULAR]
+
+  run.t: [128]
+
+  run.iterations: [16000]

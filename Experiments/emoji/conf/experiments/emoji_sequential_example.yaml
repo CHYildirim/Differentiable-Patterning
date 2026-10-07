@@ -1,0 +1,15 @@
+experiment_name: emoji_sequence_example_v2
+entrypoint: Experiments.emoji.train:run
+output_subdir: generated/emoji_sequence_example
+seed_mode: index
+grid:
+  run.repeat: [0,1]
+  data.emoji.task: [sequence]
+  data.emoji.sequence: [[alien_monster.png, microbe.png, rooster.png, rooster.png]]
+  data.emoji.target_repeats: [2]
+  data.batches: [2]
+  logging.wandb.project: [NCA-emoji]
+  #logging.wandb.group: [emoji-multi-attractor-example]
+  model.family: [NCA, gNCA]
+  model.channels: [16,32,48]
+  run.iterations: [8000]

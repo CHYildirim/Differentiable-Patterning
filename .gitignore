@@ -37,3 +37,4 @@ perturbations/**
 notebooks/**
 settings.json
 AGENTS.md
+inference_outputs

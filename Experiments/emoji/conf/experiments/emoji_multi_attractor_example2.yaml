@@ -1,0 +1,27 @@
+experiment_name: emoji_multi_attractor_example_v22
+entrypoint: Experiments.emoji.train:run
+output_subdir: generated/emoji_multi_attractor_example2
+seed_mode: index
+grid:
+  run.repeat: [0]
+  data.emoji.task: [multi_attractor]
+  data.emoji.pairs:
+    - - initial: {image: crab.png, mode: patch, size: 24}
+        target: crab.png
+      - initial: {image: microbe.png, mode: patch, size: 24}
+        target: microbe.png
+  data.emoji.target_repeats: [2]
+  data.batches: [2]
+  logging.wandb.project: [NCA-emoji]
+  logging.wandb.group: [emoji-multi-attractor-example]
+  model.family: [NCA, gNCA]
+  model.channels: [48]
+  run.t: [64]
+  run.iterations: [1000]
+  loss.regularisers.intermediate_state: [0.0, 1.0] # 
+  loss.regularisers.boundary: [0.0]
+  loss.regularisers.contiguous_growth: [0.0, 1.0, 5.0, 10.0] # turn of and stronger 0-10
+  loss.regularisers.localised_hidden: [0.0] #
+  loss.regularisers.update_sensitivity: [0.0] #when doing singalling but makes it more expensive
+  loss.regularisers.perturbation_conservation: [0.0] # singalling
+  loss.regularisers.hidden_state_size: [0.0] 

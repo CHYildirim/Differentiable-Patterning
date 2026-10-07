@@ -1,0 +1,133 @@
+schema_version: 1
+seed: 1
+experiment:
+  name: emoji_multi_attractor_example
+system:
+  precision: tensorfloat32
+  gpu: null
+  xla_flags: null
+data:
+  dataset: emojis
+  batches: 2
+  downsample: 1
+  emoji:
+    task: multi_attractor
+    sequence:
+    - alien_monster.png
+    - microbe.png
+    - rooster.png
+    - rooster.png
+    pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 12
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 12
+      target: microbe.png
+    target_repeats: 2
+    timesteps: null
+    observed_channels: 4
+    data_channels: 4
+    crop_square: false
+    pad:
+    - 10
+    - 10
+    - 10
+    - 10
+    shift_amount: 2
+    noise_strength: 0.005
+    noise_mode: full
+    regenerate: true
+    terminal_carry:
+      enabled: false
+      start_iteration: 1000
+      schedule_iterations: 4000
+      initial_probability: 0.5
+      final_probability: 0.9
+    regeneration:
+      enabled: true
+      start_iteration: 0
+      schedule_iterations: 0
+      initial_probability: 1.0
+      final_probability: 1.0
+model:
+  family: gNCA
+  channels: 32
+  kernel_str:
+  - ID
+  - LAP
+  - GRAD
+  activation: relu
+  fire_rate: 0.5
+  padding: REPLICATE
+  kernel_scale: 1
+  parameter_noise_level: 0.01
+trainer:
+  boundary_mode: soft
+  grad_loss: true
+  sharding: null
+  backend:
+    type: none
+  log_directory: logs/
+  loss_time_channel_mask: null
+  loop_autodiff: checkpointed
+  log_every: 100
+  pool_admission_enabled: true
+  pool_admission_relative_threshold: 1.25
+  pool_admission_previous_relative_threshold: 1.1
+  pool_admission_absolute_threshold: null
+  pool_admission_ema_decay: 0.95
+  pool_admission_warmup: null
+optimiser:
+  type: nadam
+  blocknorm: true
+  sam: false
+  gradient_clip_norm: null
+  apply_if_finite: false
+  max_consecutive_errors: 8
+  learn_rate: 0.001
+  warmup_steps: 64
+  decay_rate: 0.99
+  schedule:
+    type: exponential
+    warmup_init_lr: 1.0e-06
+    final_factor: 0.1
+    transition_fraction: 0.75
+loss:
+  terms:
+  - type: l2
+    weight: 1.0
+  regularisers:
+    intermediate_state: 1.0
+    boundary: 0.0
+    contiguous_growth: 1.0
+    localised_hidden: 0.0
+    update_sensitivity: 0.0
+    perturbation_conservation: 0.0
+    hidden_state_size: 0.0
+run:
+  t: 64
+  derive_t_from_fire_rate: false
+  fire_rate_step_numerator: null
+  iterations: 8000
+  warmup: 10
+  write_images: true
+  filename_mode: hydra
+logging:
+  backend: wandb
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-example
+    tags: null
+model_store:
+  enabled: true
+  root: models
+  collection: NCA-emoji
+  model_factory: Experiments.config_helpers:build_model
+knockout:
+  time: null
+  channel: null

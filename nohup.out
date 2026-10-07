@@ -1,0 +1,185 @@
+  File "launch_local_sweep.py", line 24
+    def utc_now() -> str:
+                  ^
+SyntaxError: invalid syntax
+Manifest: /home/can/Differentiable-Patterning/generated/emoji_multi_attractor_example/manifest.yaml
+Experiment: emoji_multi_attractor_example_v2
+Indices: 0..0 (1 total in manifest)
+Logs: /home/can/Differentiable-Patterning/logs/local_sweeps/emoji_multi_attractor_example_v2
+Models: /home/can/Differentiable-Patterning/models/local/emoji_multi_attractor_example_v2
+W&B mode: online
+[0] /home/can/.stay/bin/python -m Experiments.run_config --manifest /home/can/Differentiable-Patterning/generated/emoji_multi_attractor_example/manifest.yaml --index 0
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/launch_local_sweep.py", line 187, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/can/Differentiable-Patterning/launch_local_sweep.py", line 172, in main
+    result = subprocess.run(command, cwd=REPO_ROOT, env=env, stdout=stdout, stderr=stderr)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 1201, in communicate
+    self.wait()
+  File "/usr/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 2053, in _wait
+    (pid, sts) = self._try_wait(0)
+                 ^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 2011, in _try_wait
+    (pid, sts) = os.waitpid(self.pid, wait_flags)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+E1006 21:49:36.650146 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 17.66GiB (18958254080 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.650520 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 15.89GiB (17062428672 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.650807 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 14.30GiB (15356185600 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.651112 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 12.87GiB (13820566528 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.651384 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 11.58GiB (12438509568 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.651652 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 10.43GiB (11194658816 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.651951 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 9.38GiB (10075192320 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.652203 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 8.44GiB (9067672576 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.652460 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 7.60GiB (8160905216 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.652712 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 6.84GiB (7344814592 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.652962 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 6.16GiB (6610333184 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.653203 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 5.54GiB (5949299712 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.653449 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 4.99GiB (5354369536 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+E1006 21:49:36.653693 2946873 cuda_executor.cc:1176] [0] Failed to allocate device memory of 4.49GiB (4818932224 bytes): RESOURCE_EXHAUSTED: : CUDA_ERROR_OUT_OF_MEMORY: out of memory
+=== Source Location Trace: === 
+external/xla/xla/stream_executor/cuda/cuda_status.cc:45
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:226
+external/xla/xla/stream_executor/cuda/cuda_device_allocator.cc:403
+
+JAX-Geraete: [CudaDevice(id=0)]
+Modelle:
+  2attr_replicate_gNCA         models/local/emoji_multi_attractor_example_v2/bundles/nca-emoji/emoji-multi-attractor-example-v2/20260830T174447Z-cfga63e288e1e9e-db1f45fc
+  2attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260929T132309Z-cfg372a0c3f14b5-e84bd156
+  3attr_replicate_gNCA         models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260921T212103Z-cfg9b176dd6be39-b584de1c
+  3attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260909T232154Z-cfg23d2f219b302-df559ea2
+  4attr_replicate_gNCA         models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260927T020111Z-cfg1be8b5068de7-6ada72d2
+  4attr_circular_gNCA          models/local/emoji_multi_attractor_2_3_4/bundles/nca-emoji/emoji-multi-attractor-2-3-4/20260910T173700Z-cfgf1ae05f3a10d-be54beee
+Emojis: demo/demo_data/Emojis
+
+==================== 2attr_replicate_gNCA ====================
+Bundle: models/local/emoji_multi_attractor_example_v2/bundles/nca-emoji/emoji-multi-attractor-example-v2/20260830T174447Z-cfga63e288e1e9e-db1f45fc
+gNCA, Padding REPLICATE, Attraktoren ['CRAB', 'MICROBE'], Leinwand 140x140, Seed (69,69)
+  CRAB: Seed-RGBA [245, 127, 144, 255]
+  MICROBE: Seed-RGBA [57, 207, 162, 255]
+Wachse 2 Attraktoren x 8 Wiederholungen (256 Schritte) ...
+Traceback (most recent call last):
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1489, in <module>
+    main()
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 1473, in main
+    results.append(run_model(info, emoji_dir, args))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 831, in run_model
+    grown = grow_states(ctx, grow_step, [a.index for a in ctx.attractors], reps)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/Differentiable-Patterning/signal_threshold_scan.py", line 547, in grow_states
+    x = grow_step(ctx.model, x, keys, jnp.int32(t))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 209, in __call__
+    return _call(self, False, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/equinox/_jit.py", line 263, in _call
+    marker, _, _ = out = jit_wrapper._cached(
+                         ^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/traceback_util.py", line 195, in reraise_with_filtered_traceback
+    return fun(*args, **kwargs)  # pyrefly: ignore[not-callable]
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/pjit.py", line 266, in cache_miss
+    executable, pgle_profiler, const_args) = _run_python_pjit(
+                                             ^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/pjit.py", line 142, in _run_python_pjit
+    out_flat, compiled, profiler, const_args = _pjit_call_impl_python(
+                                               ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/pjit.py", line 1207, in _pjit_call_impl_python
+    compiled = computation.compile()
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py", line 1260, in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py", line 1757, in from_hlo
+    xla_executable = _cached_compilation(
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py", line 1537, in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/compiler.py", line 464, in compile_or_get_cached
+    return _compile_and_write_cache(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/compiler.py", line 729, in _compile_and_write_cache
+    executable = backend_compile_and_load(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/profiler.py", line 420, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/can/.stay/lib/python3.12/site-packages/jax/_src/compiler.py", line 350, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

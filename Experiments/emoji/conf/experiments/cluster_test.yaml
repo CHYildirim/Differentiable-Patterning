@@ -1,0 +1,20 @@
+experiment_name: cluster_test
+entrypoint: Experiments.emoji.train:run
+output_subdir: generated/cluster_test
+seed_mode: index
+grid:
+  run.repeat: [0]
+  data.emoji.task: [multi_attractor]
+  data.emoji.pairs:
+    - - initial: {image: crab.png, mode: patch, size: 24}
+        target: crab.png
+      - initial: {image: microbe.png, mode: patch, size: 24}
+        target: microbe.png
+  data.emoji.target_repeats: [2]
+  data.batches: [2]
+  logging.wandb.project: [NCA-emoji]
+  logging.wandb.group: [cluster_test]
+  model.family: [NCA]
+  model.channels: [6]
+  run.t: [32]
+  run.iterations: [100]

@@ -1,0 +1,34 @@
+experiment_name: emoji_multi_attractor_smoke
+
+entrypoint: Experiments.emoji.train:run
+output_subdir: generated/emoji_multi_attractor_smoke
+
+seed_mode: index
+
+grid:
+  data.emoji.task: [multi_attractor]
+
+  data.emoji.pairs:
+    - - initial: {image: crab.png, mode: patch, size: 4}
+        target: crab.png
+      - initial: {image: microbe.png, mode: patch, size: 4}
+        target: microbe.png
+
+  data.emoji.target_repeats: [1]
+
+  data.batches: [1]
+  data.downsample: [16]
+
+  model.family: [NCA]
+  model.channels: [8]
+  optimiser.warmup_steps: [10]
+  trainer.grad_loss: [false]
+  trainer.pool_admission_enabled: [false]
+
+  run.t: [8]
+  run.iterations: [200]
+  run.warmup: [10]
+  run.write_images: [true]
+
+  logging.wandb.project: [NCA-emoji]
+  logging.wandb.group: [emoji-multi-attractor-smoke]

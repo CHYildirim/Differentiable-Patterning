@@ -81,7 +81,6 @@ echo "SYCL runtime tracing: $NCA_SYCL_TRACE"
 sbatch \
     --job-name="$JOB_NAME" \
     --partition="pvc9" \
-    --account="AIRR-P100-DAWN-GPU" \
     --array="0-$((N_JOBS - 1))%$ARRAY_PARALLELISM" \
     --time="$TIME" \
     --mem="$MEM" \

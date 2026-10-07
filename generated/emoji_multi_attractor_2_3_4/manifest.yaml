@@ -1,0 +1,2060 @@
+experiment_name: emoji_multi_attractor_2_3_4
+entrypoint: Experiments.emoji.train:run
+base_config: /home/can/Differentiable-Patterning/Experiments/emoji/conf/base_config.yaml
+sweep_file: /home/can/Differentiable-Patterning/Experiments/emoji/conf/experiments/emoji_multi_attractor_example.yaml
+output_dir: /home/can/Differentiable-Patterning/generated/emoji_multi_attractor_2_3_4
+count: 12
+configs:
+- index: 0
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 1022050301
+  config:
+    schema_version: 1
+    seed: 1022050301
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 1
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 560161641
+  config:
+    schema_version: 1
+    seed: 560161641
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 2
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 1588945316
+  config:
+    schema_version: 1
+    seed: 1588945316
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 3
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 2036044446
+  config:
+    schema_version: 1
+    seed: 2036044446
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 4
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    - initial:
+        image: alien_monster.png
+        mode: patch
+        size: 1
+      target: alien_monster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 281444313
+  config:
+    schema_version: 1
+    seed: 281444313
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        - initial:
+            image: alien_monster.png
+            mode: patch
+            size: 1
+          target: alien_monster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 5
+  overrides:
+    run.repeat: 0
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    - initial:
+        image: alien_monster.png
+        mode: patch
+        size: 1
+      target: alien_monster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 56556069
+  config:
+    schema_version: 1
+    seed: 56556069
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        - initial:
+            image: alien_monster.png
+            mode: patch
+            size: 1
+          target: alien_monster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 0
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 6
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 2015337560
+  config:
+    schema_version: 1
+    seed: 2015337560
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 7
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 1113916996
+  config:
+    schema_version: 1
+    seed: 1113916996
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 8
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 1006443827
+  config:
+    schema_version: 1
+    seed: 1006443827
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 9
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 823534631
+  config:
+    schema_version: 1
+    seed: 823534631
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 10
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    - initial:
+        image: alien_monster.png
+        mode: patch
+        size: 1
+      target: alien_monster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: REPLICATE
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 2019766388
+  config:
+    schema_version: 1
+    seed: 2019766388
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        - initial:
+            image: alien_monster.png
+            mode: patch
+            size: 1
+          target: alien_monster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+- index: 11
+  overrides:
+    run.repeat: 1
+    data.emoji.task: multi_attractor
+    data.emoji.pairs:
+    - initial:
+        image: crab.png
+        mode: patch
+        size: 1
+      target: crab.png
+    - initial:
+        image: microbe.png
+        mode: patch
+        size: 1
+      target: microbe.png
+    - initial:
+        image: rooster.png
+        mode: patch
+        size: 1
+      target: rooster.png
+    - initial:
+        image: alien_monster.png
+        mode: patch
+        size: 1
+      target: alien_monster.png
+    data.emoji.target_repeats: 2
+    data.batches: 2
+    logging.wandb.project: NCA-emoji
+    logging.wandb.group: emoji-multi-attractor-2-3-4
+    model.family: gNCA
+    model.channels: 64
+    model.padding: CIRCULAR
+    run.t: 128
+    run.iterations: 16000
+    experiment.name: emoji_multi_attractor_2_3_4
+    seed: 2045921456
+  config:
+    schema_version: 1
+    seed: 2045921456
+    experiment:
+      name: emoji_multi_attractor_2_3_4
+    system:
+      precision: tensorfloat32
+      gpu: null
+      xla_flags: null
+    data:
+      dataset: emojis
+      batches: 2
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence:
+        - alien_monster.png
+        - microbe.png
+        - rooster.png
+        - rooster.png
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 1
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 1
+          target: microbe.png
+        - initial:
+            image: rooster.png
+            mode: patch
+            size: 1
+          target: rooster.png
+        - initial:
+            image: alien_monster.png
+            mode: patch
+            size: 1
+          target: alien_monster.png
+        target_repeats: 2
+        timesteps: null
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        shift_amount: 2
+        noise_strength: 0.005
+        noise_mode: full
+        regenerate: true
+        terminal_carry:
+          enabled: false
+          start_iteration: 1000
+          schedule_iterations: 4000
+          initial_probability: 0.5
+          final_probability: 0.9
+        regeneration:
+          enabled: true
+          start_iteration: 0
+          schedule_iterations: 0
+          initial_probability: 1.0
+          final_probability: 1.0
+    model:
+      family: gNCA
+      channels: 64
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: CIRCULAR
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    trainer:
+      boundary_mode: soft
+      grad_loss: true
+      sharding: null
+      backend:
+        type: none
+      log_directory: logs/
+      loss_time_channel_mask: null
+      loop_autodiff: checkpointed
+      log_every: 100
+      pool_admission_enabled: true
+      pool_admission_relative_threshold: 1.25
+      pool_admission_previous_relative_threshold: 1.1
+      pool_admission_absolute_threshold: null
+      pool_admission_ema_decay: 0.95
+      pool_admission_warmup: null
+    optimiser:
+      type: nadam
+      blocknorm: true
+      sam: false
+      gradient_clip_norm: null
+      apply_if_finite: false
+      max_consecutive_errors: 8
+      learn_rate: 0.001
+      warmup_steps: 64
+      decay_rate: 0.99
+      schedule:
+        type: exponential
+        warmup_init_lr: 1.0e-06
+        final_factor: 0.1
+        transition_fraction: 0.75
+    loss:
+      terms:
+      - type: l2
+        weight: 1.0
+      regularisers:
+        intermediate_state: 1.0
+        boundary: 0.0
+        contiguous_growth: 1.0
+        localised_hidden: 0.0
+        update_sensitivity: 0.0
+        perturbation_conservation: 0.0
+        hidden_state_size: 0.0
+    run:
+      t: 128
+      derive_t_from_fire_rate: false
+      fire_rate_step_numerator: null
+      iterations: 16000
+      warmup: 10
+      write_images: true
+      filename_mode: hydra
+      repeat: 1
+    logging:
+      backend: wandb
+      wandb:
+        project: NCA-emoji
+        group: emoji-multi-attractor-2-3-4
+        tags: null
+    model_store:
+      enabled: true
+      root: models
+      collection: NCA-emoji
+      model_factory: Experiments.config_helpers:build_model
+    knockout:
+      time: null
+      channel: null
+emit_files: false

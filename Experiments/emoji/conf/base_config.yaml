@@ -103,13 +103,13 @@ loss:
       weight: 1.0
 
   regularisers:
-    intermediate_state: 1.0
+    intermediate_state: 1.0 # 
     boundary: 0.0
-    contiguous_growth: 1.0
-    localised_hidden: 0.0
-    update_sensitivity: 0.0
+    contiguous_growth: 1.0 # turn of and stronger 0-10
+    localised_hidden: 0.0 #
+    update_sensitivity: 0.0 #when doing singalling but makes it more expensive
     perturbation_conservation: 0.0
-    hidden_state_size: 0.0
+    hidden_state_size: 0.0 
 run:
   t: 64
   derive_t_from_fire_rate: false
