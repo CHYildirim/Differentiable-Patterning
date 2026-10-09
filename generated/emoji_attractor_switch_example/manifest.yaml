@@ -1,0 +1,484 @@
+experiment_name: emoji_attractor_switch_example
+entrypoint: Experiments.impulse.optimise:run
+base_config: /home/can/Differentiable-Patterning/Experiments/impulse/conf/base_config.yaml
+sweep_file: /home/can/Differentiable-Patterning/Experiments/impulse/conf/experiments/emoji_attractor_switch_example.yaml
+output_dir: /home/can/Differentiable-Patterning/generated/emoji_attractor_switch_example
+count: 4
+configs:
+- index: 0
+  overrides:
+    checkpoint.path: models/multi_species_model.eqx
+    model.family: NCA
+    model.channels: 32
+    impulse.pair_source.type: stable_attractor
+    impulse.pair_source.source_index: 0
+    impulse.pair_source.target_index: 1
+    impulse.objective.type: targeted
+    impulse.intervention.channels: hidden
+    impulse.intervention.spatial: local
+    impulse.intervention.width: 0.1
+    impulse.loss.regularisers.l2: 0.1
+    experiment.name: emoji_attractor_switch_example
+    logging.wandb.group: emoji_attractor_switch_example
+    seed: 0
+  config:
+    schema_version: 1
+    seed: 0
+    experiment:
+      name: emoji_attractor_switch_example
+    system:
+      precision: highest
+      gpu: null
+      xla_flags: null
+    checkpoint:
+      path: models/multi_species_model.eqx
+      base_directory: null
+      base_env: MODEL_SAVE_PATH
+    data:
+      dataset: emojis
+      batches: 1
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence: []
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 12
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 12
+          target: microbe.png
+        target_repeats: 2
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        regenerate: false
+    model:
+      family: NCA
+      channels: 32
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    impulse:
+      iterations: 1000
+      batch_size: 8
+      resample_every: 100
+      log_every: 100
+      pair_source:
+        type: stable_attractor
+        source_index: 0
+        target_index: 1
+        stabilisation_steps:
+        - 128
+        - 256
+        target_steps: 192
+        initial_index: 0
+      rollout:
+        steps: 64
+        evaluation_steps: 256
+        scan_kind: lax
+      intervention:
+        channels: hidden
+        spatial: local
+        width: 0.1
+      objective:
+        type: targeted
+        target_weight: 1.0
+        tolerance: 0.01
+        constraint_weight: 100.0
+        magnitude: l2
+        reward_weight: 1.0
+      loss:
+        terms:
+        - type: l2
+          weight: 1.0
+          channels: observed
+        regularisers:
+          l1: 0.0
+          l2: 0.1
+          linf: 0.0
+          smoothness: 0.0
+          state_range: 0.0
+      optimiser:
+        type: adam
+        learn_rate: 0.001
+        gradient_clip_norm: 1.0
+      output:
+        directory: impulse_runs
+        base_env: IMPULSE_OUTPUT_PATH
+    logging:
+      wandb:
+        group: emoji_attractor_switch_example
+- index: 1
+  overrides:
+    checkpoint.path: models/multi_species_model.eqx
+    model.family: NCA
+    model.channels: 32
+    impulse.pair_source.type: stable_attractor
+    impulse.pair_source.source_index: 0
+    impulse.pair_source.target_index: 1
+    impulse.objective.type: targeted
+    impulse.intervention.channels: hidden
+    impulse.intervention.spatial: local
+    impulse.intervention.width: 0.1
+    impulse.loss.regularisers.l2: 1.0
+    experiment.name: emoji_attractor_switch_example
+    logging.wandb.group: emoji_attractor_switch_example
+    seed: 1
+  config:
+    schema_version: 1
+    seed: 1
+    experiment:
+      name: emoji_attractor_switch_example
+    system:
+      precision: highest
+      gpu: null
+      xla_flags: null
+    checkpoint:
+      path: models/multi_species_model.eqx
+      base_directory: null
+      base_env: MODEL_SAVE_PATH
+    data:
+      dataset: emojis
+      batches: 1
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence: []
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 12
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 12
+          target: microbe.png
+        target_repeats: 2
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        regenerate: false
+    model:
+      family: NCA
+      channels: 32
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    impulse:
+      iterations: 1000
+      batch_size: 8
+      resample_every: 100
+      log_every: 100
+      pair_source:
+        type: stable_attractor
+        source_index: 0
+        target_index: 1
+        stabilisation_steps:
+        - 128
+        - 256
+        target_steps: 192
+        initial_index: 0
+      rollout:
+        steps: 64
+        evaluation_steps: 256
+        scan_kind: lax
+      intervention:
+        channels: hidden
+        spatial: local
+        width: 0.1
+      objective:
+        type: targeted
+        target_weight: 1.0
+        tolerance: 0.01
+        constraint_weight: 100.0
+        magnitude: l2
+        reward_weight: 1.0
+      loss:
+        terms:
+        - type: l2
+          weight: 1.0
+          channels: observed
+        regularisers:
+          l1: 0.0
+          l2: 1.0
+          linf: 0.0
+          smoothness: 0.0
+          state_range: 0.0
+      optimiser:
+        type: adam
+        learn_rate: 0.001
+        gradient_clip_norm: 1.0
+      output:
+        directory: impulse_runs
+        base_env: IMPULSE_OUTPUT_PATH
+    logging:
+      wandb:
+        group: emoji_attractor_switch_example
+- index: 2
+  overrides:
+    checkpoint.path: models/multi_species_model.eqx
+    model.family: NCA
+    model.channels: 32
+    impulse.pair_source.type: stable_attractor
+    impulse.pair_source.source_index: 0
+    impulse.pair_source.target_index: 1
+    impulse.objective.type: targeted
+    impulse.intervention.channels: hidden
+    impulse.intervention.spatial: local
+    impulse.intervention.width: 0.2
+    impulse.loss.regularisers.l2: 0.1
+    experiment.name: emoji_attractor_switch_example
+    logging.wandb.group: emoji_attractor_switch_example
+    seed: 2
+  config:
+    schema_version: 1
+    seed: 2
+    experiment:
+      name: emoji_attractor_switch_example
+    system:
+      precision: highest
+      gpu: null
+      xla_flags: null
+    checkpoint:
+      path: models/multi_species_model.eqx
+      base_directory: null
+      base_env: MODEL_SAVE_PATH
+    data:
+      dataset: emojis
+      batches: 1
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence: []
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 12
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 12
+          target: microbe.png
+        target_repeats: 2
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        regenerate: false
+    model:
+      family: NCA
+      channels: 32
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    impulse:
+      iterations: 1000
+      batch_size: 8
+      resample_every: 100
+      log_every: 100
+      pair_source:
+        type: stable_attractor
+        source_index: 0
+        target_index: 1
+        stabilisation_steps:
+        - 128
+        - 256
+        target_steps: 192
+        initial_index: 0
+      rollout:
+        steps: 64
+        evaluation_steps: 256
+        scan_kind: lax
+      intervention:
+        channels: hidden
+        spatial: local
+        width: 0.2
+      objective:
+        type: targeted
+        target_weight: 1.0
+        tolerance: 0.01
+        constraint_weight: 100.0
+        magnitude: l2
+        reward_weight: 1.0
+      loss:
+        terms:
+        - type: l2
+          weight: 1.0
+          channels: observed
+        regularisers:
+          l1: 0.0
+          l2: 0.1
+          linf: 0.0
+          smoothness: 0.0
+          state_range: 0.0
+      optimiser:
+        type: adam
+        learn_rate: 0.001
+        gradient_clip_norm: 1.0
+      output:
+        directory: impulse_runs
+        base_env: IMPULSE_OUTPUT_PATH
+    logging:
+      wandb:
+        group: emoji_attractor_switch_example
+- index: 3
+  overrides:
+    checkpoint.path: models/multi_species_model.eqx
+    model.family: NCA
+    model.channels: 32
+    impulse.pair_source.type: stable_attractor
+    impulse.pair_source.source_index: 0
+    impulse.pair_source.target_index: 1
+    impulse.objective.type: targeted
+    impulse.intervention.channels: hidden
+    impulse.intervention.spatial: local
+    impulse.intervention.width: 0.2
+    impulse.loss.regularisers.l2: 1.0
+    experiment.name: emoji_attractor_switch_example
+    logging.wandb.group: emoji_attractor_switch_example
+    seed: 3
+  config:
+    schema_version: 1
+    seed: 3
+    experiment:
+      name: emoji_attractor_switch_example
+    system:
+      precision: highest
+      gpu: null
+      xla_flags: null
+    checkpoint:
+      path: models/multi_species_model.eqx
+      base_directory: null
+      base_env: MODEL_SAVE_PATH
+    data:
+      dataset: emojis
+      batches: 1
+      downsample: 1
+      emoji:
+        task: multi_attractor
+        sequence: []
+        pairs:
+        - initial:
+            image: crab.png
+            mode: patch
+            size: 12
+          target: crab.png
+        - initial:
+            image: microbe.png
+            mode: patch
+            size: 12
+          target: microbe.png
+        target_repeats: 2
+        observed_channels: 4
+        data_channels: 4
+        crop_square: false
+        pad:
+        - 10
+        - 10
+        - 10
+        - 10
+        regenerate: false
+    model:
+      family: NCA
+      channels: 32
+      kernel_str:
+      - ID
+      - LAP
+      - GRAD
+      activation: relu
+      fire_rate: 0.5
+      padding: REPLICATE
+      kernel_scale: 1
+      parameter_noise_level: 0.01
+    impulse:
+      iterations: 1000
+      batch_size: 8
+      resample_every: 100
+      log_every: 100
+      pair_source:
+        type: stable_attractor
+        source_index: 0
+        target_index: 1
+        stabilisation_steps:
+        - 128
+        - 256
+        target_steps: 192
+        initial_index: 0
+      rollout:
+        steps: 64
+        evaluation_steps: 256
+        scan_kind: lax
+      intervention:
+        channels: hidden
+        spatial: local
+        width: 0.2
+      objective:
+        type: targeted
+        target_weight: 1.0
+        tolerance: 0.01
+        constraint_weight: 100.0
+        magnitude: l2
+        reward_weight: 1.0
+      loss:
+        terms:
+        - type: l2
+          weight: 1.0
+          channels: observed
+        regularisers:
+          l1: 0.0
+          l2: 1.0
+          linf: 0.0
+          smoothness: 0.0
+          state_range: 0.0
+      optimiser:
+        type: adam
+        learn_rate: 0.001
+        gradient_clip_norm: 1.0
+      output:
+        directory: impulse_runs
+        base_env: IMPULSE_OUTPUT_PATH
+    logging:
+      wandb:
+        group: emoji_attractor_switch_example
+emit_files: false
