@@ -10,7 +10,7 @@
 # ]
 # ///
 
-"""A read-only marimo explorer for a local model registry.
+"""A marimo explorer for a local model registry.
 
 Run from the repository root with:
 
@@ -22,28 +22,38 @@ import marimo
 __generated_with = "0.23.10"
 app = marimo.App(width="full")
 
-with app.setup:
+with app.setup(hide_code=True):
+    from dataclasses import replace
     import sys
     from pathlib import Path
     _repository_root = Path(__file__).resolve().parents[1]
-    if str(_repository_root) not in sys.path:
-        sys.path.insert(0, str(_repository_root))
     import os
+    import json
     import sqlite3
     from pathlib import Path
 
     import marimo as mo
     import pandas as pd
     from dotenv import load_dotenv
+    from omegaconf import OmegaConf
     load_dotenv(_repository_root / ".env", override=False)
         # try:
+    import jax
     import jax.numpy as jnp
     import jax.random as jr
     import matplotlib.pyplot as plt
     import numpy as np
 
-    from Common.model.boundary import hard_boundary, model_boundary, no_boundary
-    from NCA.registry import ModelRegistry, verify_evaluation_input
+    from Experiments.model_registry import (
+        ModelRegistry,
+        parse_selection,
+        selection_document,
+        verify_evaluation_input,
+    )
+    from NCA.trainer.intervention import (
+        rollout_model_sampled,
+        rollout_model_with_blocked_channel_sampled,
+    )
 
 
 @app.cell(hide_code=True)
@@ -51,10 +61,25 @@ def _():
     mo.md("""
     # Model registry explorer
 
-    Search the read-only SQLite catalogue, then select a model to inspect its
-    indexed metadata. Rebuild the index separately with
+    Search the SQLite catalogue, select models, and add persistent notes for
+    downstream labels and analysis. Rebuild the index separately with
     `python -m Experiments.model_registry reindex` when needed.
     """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    _backend = jax.default_backend()
+    _devices = ", ".join(
+        f"{_device.platform}: {_device.device_kind}" for _device in jax.devices()
+    )
+    _kind = "success" if _backend == "gpu" else "warn"
+    mo.callout(
+        f"JAX backend: **{_backend}** · Devices: {_devices}. "
+        "The first rollout for each model architecture includes JIT compilation.",
+        kind=_kind,
+    )
     return
 
 
@@ -86,9 +111,33 @@ def _(store_root):
     else:
         try:
             with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
-                pd.read_sql_query("SELECT 1 FROM models LIMIT 1", _connection)
-            database_error = None
-        except sqlite3.Error as _error:
+                _table_rows = _connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+                _tables = {_row[0] for _row in _table_rows}
+                _required_tables = {
+                    "models", "evaluations", "model_annotations", "model_tags",
+                    "model_wandb_tags",
+                }
+                _model_columns = {
+                    _row[1] for _row in _connection.execute("PRAGMA table_info(models)")
+                }
+                _required_model_columns = {
+                    "model_id", "config_id", "display_name", "wandb_group",
+                }
+                _missing_schema = sorted(
+                    (_required_tables - _tables)
+                    | (_required_model_columns - _model_columns)
+                )
+            if _missing_schema:
+                database_error = (
+                    f"The registry at {database_path} uses an outdated schema "
+                    f"(missing: {', '.join(_missing_schema)}). Rebuild it with "
+                    f"`python -m Experiments.model_registry --root {_store_path} reindex`."
+                )
+            else:
+                database_error = None
+        except (sqlite3.Error, OSError) as _error:
             database_error = f"Could not read {database_path}: {_error}"
     return database_error, database_path
 
@@ -109,36 +158,183 @@ def _():
 @app.cell(hide_code=True)
 def _(database_error, database_path):
     if database_error:
-        _wandb_tag_options = []
+        _wandb_group_options = []
     else:
         with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
-            _wandb_tag_rows = pd.read_sql_query(
-                "SELECT DISTINCT tag FROM model_wandb_tags ORDER BY tag", _connection
+            _wandb_group_rows = pd.read_sql_query(
+                "SELECT DISTINCT wandb_group FROM models "
+                "WHERE wandb_group IS NOT NULL AND wandb_group != '' "
+                "ORDER BY wandb_group",
+                _connection,
             )
-        _wandb_tag_options = _wandb_tag_rows["tag"].tolist()
-    wandb_tag_filter = mo.ui.multiselect(
-        options=_wandb_tag_options,
-        label="W&B tags (match all)",
+        _wandb_group_options = _wandb_group_rows["wandb_group"].tolist()
+    wandb_group_filter = mo.ui.multiselect(
+        options=_wandb_group_options,
+        label="W&B groups (match any)",
         full_width=True,
     )
-    wandb_tag_filter
-    return (wandb_tag_filter,)
+    wandb_group_filter
+    return (wandb_group_filter,)
+
+
+@app.cell(hide_code=True)
+def _():
+    saved_selection_file = mo.ui.file(
+        filetypes=[".yaml", ".yml"],
+        multiple=True,
+        kind="area",
+        label="Load saved model lists (YAML exported below; match any)",
+    )
+    saved_selection_mode = mo.ui.radio(
+        options={
+            "AND: saved models within the selected W&B groups": "and",
+            "OR: saved models plus the selected W&B groups": "or",
+        },
+        value="AND: saved models within the selected W&B groups",
+        label="Combine saved lists with W&B groups",
+    )
+    mo.vstack([saved_selection_file, saved_selection_mode])
+    return saved_selection_file, saved_selection_mode
+
+
+@app.cell(hide_code=True)
+def _(database_error, database_path, saved_selection_file):
+    # Model IDs from the uploaded lists, in file order, without duplicates.
+    saved_model_ids = []
+    _messages = []
+    for _upload in saved_selection_file.value:
+        try:
+            _models = parse_selection(_upload.contents.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as _error:
+            _messages.append(mo.callout(f"{_upload.name}: {_error}", kind="danger"))
+            continue
+        saved_model_ids.extend(
+            _model["model_id"] for _model in _models
+            if _model["model_id"] not in saved_model_ids
+        )
+    if saved_model_ids and not database_error:
+        _placeholders = ", ".join("?" for _ in saved_model_ids)
+        with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
+            _found = {
+                _row[0] for _row in _connection.execute(
+                    f"SELECT model_id FROM models WHERE model_id IN ({_placeholders})",
+                    saved_model_ids,
+                )
+            }
+        _missing = [_model_id for _model_id in saved_model_ids if _model_id not in _found]
+        _summary = f"Loaded **{len(_found)} models** from the saved lists."
+        if _missing:
+            _summary += (
+                f" {len(_missing)} are not in this registry: "
+                + ", ".join(f"`{_model_id}`" for _model_id in _missing)
+            )
+        _messages.append(mo.md(_summary))
+    mo.vstack(_messages)
+    return (saved_model_ids,)
+
+
+@app.cell(hide_code=True)
+def _(saved_model_ids, saved_selection_mode, wandb_group_filter):
+    # SQL condition on `models AS m` for the models being browsed: the selected
+    # W&B groups combined with the saved lists (AND or OR). The other filters,
+    # including W&B tags, are applied on top of this in both modes.
+    _conditions = []
+    browse_parameters = []
+    if wandb_group_filter.value:
+        _group_placeholders = ", ".join("?" for _ in wandb_group_filter.value)
+        _conditions.append(f"m.wandb_group IN ({_group_placeholders})")
+        browse_parameters.extend(wandb_group_filter.value)
+    if saved_model_ids:
+        _id_placeholders = ", ".join("?" for _ in saved_model_ids)
+        _conditions.append(f"m.model_id IN ({_id_placeholders})")
+        browse_parameters.extend(saved_model_ids)
+    _joiner = " OR " if saved_selection_mode.value == "or" else " AND "
+    browse_clause = (
+        "(" + _joiner.join(f"({_condition})" for _condition in _conditions) + ")"
+        if _conditions else ""
+    )
+    return browse_clause, browse_parameters
+
+
+@app.cell(hide_code=True)
+def _(browse_clause, browse_parameters, database_error, database_path):
+    if database_error:
+        _wandb_tag_options = []
+    else:
+        _browse_where = f"WHERE {browse_clause} " if browse_clause else ""
+        _wandb_tag_sql = (
+            "SELECT DISTINCT wt.tag FROM model_wandb_tags AS wt "
+            "JOIN models AS m ON m.model_id = wt.model_id "
+            f"{_browse_where}ORDER BY wt.tag"
+        )
+        with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
+            _wandb_tag_rows = pd.read_sql_query(
+                _wandb_tag_sql,
+                _connection,
+                params=browse_parameters,
+            )
+        _wandb_tag_options = _wandb_tag_rows["tag"].tolist()
+
+    if database_error:
+        _numeric_tag_options = []
+    else:
+        _tag_values = {}
+        for _tag in _wandb_tag_options:
+            _tag_key, _separator, _tag_value = _tag.partition(":")
+            if _separator:
+                _tag_values.setdefault(_tag_key, []).append(_tag_value)
+        _numeric_tag_options = []
+        for _tag_key, _values in _tag_values.items():
+            try:
+                [float(_value) for _value in _values]
+            except ValueError:
+                continue
+            _numeric_tag_options.append(_tag_key)
+    wandb_tag_filter = mo.ui.multiselect(
+        options=_wandb_tag_options,
+        label="Configuration/W&B tags (match all)",
+        full_width=True,
+    )
+    numeric_tag_sort = mo.ui.dropdown(
+        options=["No sort", "Created at", *_numeric_tag_options],
+        value="No sort",
+        label="Sort by numerical tag",
+        full_width=True,
+    )
+    numeric_tag_sort_direction = mo.ui.dropdown(
+        options=["Ascending", "Descending"],
+        value="Ascending",
+        label="Direction",
+    )
+    mo.vstack([
+        wandb_tag_filter,
+        mo.hstack([numeric_tag_sort, numeric_tag_sort_direction], widths=[3, 1]),
+    ])
+    return numeric_tag_sort, numeric_tag_sort_direction, wandb_tag_filter
 
 
 @app.cell(hide_code=True)
 def _(
+    browse_clause,
+    browse_parameters,
     database_error,
     database_path,
     dataset_filter,
     family_filter,
+    numeric_tag_sort,
+    numeric_tag_sort_direction,
+    saved_model_ids,
+    saved_selection_mode,
     search_text,
     wandb_tag_filter,
 ):
     _columns = [
         "model_id", "alias", "display_name", "family", "dataset", "task", "collection",
-        "experiment", "status", "best_loss", "best_iteration", "seed", "created_at",
-        "annotation_tags", "wandb_tags",
+        "experiment", "wandb_group", "status", "best_loss", "best_iteration", "seed",
+        "created_at", "annotation_tags", "wandb_tags",
     ]
+    if saved_model_ids:
+        _columns.insert(1, "in_saved_list")
     if database_error:
         results = pd.DataFrame(columns=_columns)
     else:
@@ -150,6 +346,7 @@ def _(
                 "COALESCE(m.model_id, '') || ' ' || COALESCE(m.config_id, '') || ' ' || "
                 "COALESCE(m.display_name, '') || ' ' || COALESCE(m.slug, '') || ' ' || "
                 "COALESCE(m.collection, '') || ' ' || COALESCE(m.experiment, '') || ' ' || "
+                "COALESCE(m.wandb_group, '') || ' ' || "
                 "COALESCE(m.family, '') || ' ' || COALESCE(m.dataset, '') || ' ' || "
                 "COALESCE(m.task, '') || ' ' || COALESCE(a.alias, '') || ' ' || "
                 "COALESCE(a.notes, '') || ' ' || COALESCE(t.tags, '') || ' ' || "
@@ -163,6 +360,9 @@ def _(
         if dataset_filter.value.strip():
             _clauses.append("LOWER(m.dataset) = LOWER(?)")
             _parameters.append(dataset_filter.value.strip())
+        if browse_clause:
+            _clauses.append(browse_clause)
+            _parameters.extend(browse_parameters)
         for _wandb_tag in wandb_tag_filter.value:
             _clauses.append(
                 "EXISTS (SELECT 1 FROM model_wandb_tags AS wf "
@@ -170,7 +370,48 @@ def _(
             )
             _parameters.append(_wandb_tag)
 
+        # Mark the saved models; in OR mode they are listed first.
+        _saved_select = ""
+        _saved_parameters = []
+        _order_terms = []
+        if saved_model_ids:
+            _id_placeholders = ", ".join("?" for _ in saved_model_ids)
+            _saved_select = f"(m.model_id IN ({_id_placeholders})) AS in_saved_list, "
+            _saved_parameters = list(saved_model_ids)
+            if saved_selection_mode.value == "or":
+                _order_terms.append("in_saved_list DESC")
+
         _where = f" WHERE {' AND '.join(_clauses)}" if _clauses else ""
+        _sort_key = numeric_tag_sort.value
+        if _sort_key in {"No sort", "Created at"}:
+            _numeric_sort_cte = ""
+            _numeric_sort_join = ""
+            _numeric_sort_select = ""
+            if _sort_key == "Created at":
+                _order_terms.append("m.created_at DESC")
+            _sort_parameters = []
+        else:
+            _direction = (
+                "ASC" if numeric_tag_sort_direction.value == "Ascending" else "DESC"
+            )
+            _numeric_sort_cte = """, numeric_sort AS (
+                SELECT model_id,
+                       MAX(CAST(SUBSTR(tag, INSTR(tag, ':') + 1) AS REAL)) AS value
+                FROM model_wandb_tags
+                WHERE SUBSTR(tag, 1, INSTR(tag, ':') - 1) = ?
+                GROUP BY model_id
+            )"""
+            _numeric_sort_join = (
+                "LEFT JOIN numeric_sort AS ns ON ns.model_id = m.model_id"
+            )
+            _numeric_sort_select = ", ns.value AS numeric_tag_value"
+            _order_terms += [
+                "ns.value IS NULL", f"ns.value {_direction}", "m.created_at DESC",
+            ]
+            _sort_parameters = [_sort_key]
+        _order_clause = f"ORDER BY {', '.join(_order_terms)}" if _order_terms else ""
+        # Placeholders appear in the order: sort CTE, SELECT, WHERE.
+        _query_parameters = [*_sort_parameters, *_saved_parameters, *_parameters]
         _sql = f"""
             WITH tags AS (
                 SELECT model_id, GROUP_CONCAT(tag, ', ') AS tags
@@ -180,22 +421,30 @@ def _(
                 SELECT model_id, GROUP_CONCAT(tag, ', ') AS tags
                 FROM model_wandb_tags
                 GROUP BY model_id
-            )
+            ){_numeric_sort_cte}
             SELECT
-                m.model_id, a.alias, m.display_name, m.family, m.dataset, m.task,
-                m.collection, m.experiment, m.status, m.best_loss,
+                m.model_id, {_saved_select}a.alias, m.display_name, m.family, m.dataset, m.task,
+                m.collection, m.experiment, m.wandb_group, m.status, m.best_loss,
                 m.best_iteration, m.seed, m.created_at,
                 t.tags AS annotation_tags, wt.tags AS wandb_tags
+                {_numeric_sort_select}
             FROM models AS m
             LEFT JOIN model_annotations AS a ON a.model_id = m.model_id
             LEFT JOIN tags AS t ON t.model_id = m.model_id
             LEFT JOIN wandb_tags AS wt ON wt.model_id = m.model_id
+            {_numeric_sort_join}
             {_where}
-            ORDER BY m.created_at DESC
+            {_order_clause}
             LIMIT 500
         """
         with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
-            results = pd.read_sql_query(_sql, _connection, params=_parameters)
+            results = pd.read_sql_query(_sql, _connection, params=_query_parameters)
+        if saved_model_ids:
+            results["in_saved_list"] = results["in_saved_list"].astype(bool)
+        if _sort_key not in {"No sort", "Created at"}:
+            results = results.rename(
+                columns={"numeric_tag_value": f"sort: {_sort_key}"}
+            )
     return (results,)
 
 
@@ -210,26 +459,196 @@ def _(database_error, results):
 
 
 @app.cell(hide_code=True)
-def _(results):
+def _():
+    selected_model_rows, set_selected_model_rows = mo.state(
+        {}, allow_self_loops=True
+    )
+    return selected_model_rows, set_selected_model_rows
+
+
+@app.cell(hide_code=True)
+def _(results, selected_model_rows, set_selected_model_rows):
+    _selected_rows = selected_model_rows()
+    if _selected_rows:
+        _pinned = pd.DataFrame(_selected_rows.values()).reindex(
+            columns=results.columns
+        )
+        _table_data = pd.concat([results, _pinned], ignore_index=True)
+        _table_data = _table_data.drop_duplicates(
+            subset="model_id", keep="first"
+        ).reset_index(drop=True)
+    else:
+        _table_data = results
+    _initial_selection = [
+        _index
+        for _index, _model_id in enumerate(_table_data["model_id"])
+        if _model_id in _selected_rows
+    ]
+
+    def _persist_selection(_value):
+        if _value is None:
+            _records = []
+        elif hasattr(_value, "to_dict"):
+            _records = _value.to_dict(orient="records")
+        else:
+            _records = list(_value)
+        set_selected_model_rows({_row["model_id"]: _row for _row in _records})
+
     results_table = mo.ui.table(
-        results,
+        _table_data,
         selection="multi",
+        initial_selection=_initial_selection,
+        on_change=_persist_selection,
         page_size=15,
         show_data_types=False,
         freeze_columns_left=["model_id","experiment"],
-        wrapped_columns=["display_name", "annotation_tags", "wandb_tags"],
+        wrapped_columns=[],
     )
     results_table
     return (results_table,)
 
 
 @app.cell(hide_code=True)
+def _():
+    mo.md("""
+    ## Export a model list
+
+    Download the curated selection (which is retained while filters change) or
+    every model in the current results table. The YAML contains complete indexed
+    model metadata, annotations, and tags, ready for downstream loading.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    export_scope = mo.ui.dropdown(
+        {
+            "Selected models": "selected",
+            "Current filtered results": "filtered",
+        },
+        value="Selected models",
+        label="Models to export",
+    )
+    export_filename = mo.ui.text(
+        "model_registry_selection.yaml",
+        label="YAML filename",
+        full_width=True,
+    )
+    mo.hstack([export_scope, export_filename], widths=[1, 2])
+    return export_filename, export_scope
+
+
+@app.cell(hide_code=True)
+def _(
+    database_error,
+    database_path,
+    export_filename,
+    export_scope,
+    note_save_status,
+    results,
+    selected_model_rows,
+):
+    _ = note_save_status  # Rebuild export data after a note is saved.
+    if export_scope.value == "selected":
+        _model_ids = list(selected_model_rows())
+    else:
+        _model_ids = results["model_id"].tolist()
+
+    _requested_name = Path(export_filename.value.strip()).name
+    if not _requested_name:
+        _requested_name = "model_registry_selection.yaml"
+    if not _requested_name.lower().endswith((".yaml", ".yml")):
+        _requested_name += ".yaml"
+
+    if database_error or not _model_ids:
+        _yaml_bytes = b""
+    else:
+        _placeholders = ", ".join("?" for _ in _model_ids)
+        with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
+            _model_rows = pd.read_sql_query(
+                "SELECT m.*, a.alias, a.notes FROM models AS m "
+                "LEFT JOIN model_annotations AS a ON a.model_id = m.model_id "
+                f"WHERE m.model_id IN ({_placeholders})",
+                _connection,
+                params=_model_ids,
+            )
+            _annotation_tag_rows = pd.read_sql_query(
+                "SELECT model_id, tag FROM model_tags "
+                f"WHERE model_id IN ({_placeholders}) ORDER BY model_id, tag",
+                _connection,
+                params=_model_ids,
+            )
+            _wandb_tag_rows = pd.read_sql_query(
+                "SELECT model_id, tag FROM model_wandb_tags "
+                f"WHERE model_id IN ({_placeholders}) ORDER BY model_id, tag",
+                _connection,
+                params=_model_ids,
+            )
+
+        _records_by_id = {
+            _record["model_id"]: _record
+            for _record in json.loads(_model_rows.to_json(orient="records"))
+        }
+        _annotation_tags = (
+            _annotation_tag_rows.groupby("model_id")["tag"].apply(list).to_dict()
+            if not _annotation_tag_rows.empty
+            else {}
+        )
+        _wandb_tags = (
+            _wandb_tag_rows.groupby("model_id")["tag"].apply(list).to_dict()
+            if not _wandb_tag_rows.empty
+            else {}
+        )
+        _models = []
+        for _model_id in _model_ids:
+            _record = _records_by_id[_model_id]
+            _record["annotation_tags"] = _annotation_tags.get(_model_id, [])
+            _record["wandb_tags"] = _wandb_tags.get(_model_id, [])
+            _models.append(_record)
+        _yaml_bytes = OmegaConf.to_yaml(
+            OmegaConf.create(selection_document(_models)), sort_keys=False
+        ).encode("utf-8")
+
+    _download = mo.download(
+        data=_yaml_bytes,
+        filename=_requested_name,
+        mimetype="application/yaml",
+        disabled=bool(database_error or not _model_ids),
+        label=f"Download YAML ({len(_model_ids)} models)",
+    )
+    if database_error:
+        _export_status = mo.callout(database_error, kind="danger")
+    elif not _model_ids:
+        _export_status = mo.md(
+            "Select at least one model, or export the current filtered results."
+        )
+    else:
+        _export_status = mo.md(
+            f"Export includes **{len(_model_ids)} models** in the displayed order."
+        )
+    mo.vstack([_download, _export_status])
+    return
+
+
+@app.cell(hide_code=True)
 def _(database_path, results_table):
     _selected = results_table.value
     if _selected is None or len(_selected) == 0:
+        selected_note_model_id = None
+        model_note = mo.ui.text_area(
+            disabled=True,
+            label="Model note",
+            placeholder="Select a model to add a note.",
+            full_width=True,
+        )
+        save_model_note = mo.ui.run_button(
+            disabled=True,
+            label="Save note",
+        )
         _detail = mo.md("Select a model to view its indexed metadata.")
     else:
-        _model_id = _selected.iloc[0]["model_id"]
+        selected_note_model_id = _selected.iloc[0]["model_id"]
         _sql = """
             WITH tags AS (
                 SELECT model_id, GROUP_CONCAT(tag, ', ') AS tags
@@ -249,14 +668,49 @@ def _(database_path, results_table):
             WHERE m.model_id = ?
         """
         with sqlite3.connect(f"file:{database_path}?mode=ro", uri=True) as _connection:
-            _metadata = pd.read_sql_query(_sql, _connection, params=[_model_id]).transpose()
+            _metadata_row = pd.read_sql_query(
+                _sql, _connection, params=[selected_note_model_id]
+            )
+        _saved_note = _metadata_row.iloc[0]["notes"]
+        if pd.isna(_saved_note):
+            _saved_note = ""
+        model_note = mo.ui.text_area(
+            str(_saved_note),
+            label="Model note",
+            placeholder="Figure label, comparison role, caveat, or other note",
+            rows=4,
+            full_width=True,
+        )
+        save_model_note = mo.ui.run_button(label="Save note")
+        _metadata = _metadata_row.transpose()
         _metadata.columns = ["Value"]
         _detail = mo.vstack([
             mo.md("## Selected model metadata"),
+            mo.md(f"Editing note for `{selected_note_model_id}`"),
+            model_note,
+            save_model_note,
             mo.ui.table(_metadata, selection=None),
         ])
     _detail
-    return
+    return model_note, save_model_note, selected_note_model_id
+
+
+@app.cell(hide_code=True)
+def _(model_note, save_model_note, selected_note_model_id, store_root):
+    if not save_model_note.value or selected_note_model_id is None:
+        note_save_status = None
+    else:
+        _registry = ModelRegistry(Path(store_root.value).expanduser())
+        _annotations_path = _registry.annotate(
+            selected_note_model_id,
+            notes=model_note.value,
+        )
+        note_save_status = mo.callout(
+            f"Saved note for `{selected_note_model_id}` to `{_annotations_path}`. ",
+            kind="success",
+        )
+    note_save_status
+    return (note_save_status,)
 
 
 @app.cell(hide_code=True)
@@ -264,10 +718,16 @@ def _():
     mo.md("""
     ## Side-by-side rollout
 
-    Select up to eight models above. **Verified bundle input** reloads each
-    model's configured data source and checks its saved input fingerprint.
-    **Specific `.npy` input** accepts a `C × H × W` array (or a batched array,
-    from which the first item is used); it is intentionally not verified.
+    Select up to eight models above. **Verified training input** reconstructs
+    each model's configured training split and checks its saved fingerprint.
+    For replicate-based micropattern data, choose a configured validation
+    replicate or any one-based replicate ID; these use the training split's
+    fitted histogram scaling but cannot be fingerprint-verified. **Specific
+    `.npy` input** accepts a `C × H × W` array (or a batched array, from which
+    the first item is used) and is also unverified. The optional **one-shot
+    condition** loads matching NODAL-KO measurements and blocks the model from
+    reading its recurrent NODAL channel from 0h or 24h onward; it does not
+    overwrite that channel's state.
     """)
     return
 
@@ -275,9 +735,30 @@ def _():
 @app.cell(hide_code=True)
 def _():
     evaluation_mode = mo.ui.dropdown(
-        ["Verified bundle input", "Specific .npy input"],
-        value="Verified bundle input",
+        [
+            "Verified training input",
+            "Configured validation replicate",
+            "Selected replicate",
+            "Specific .npy input",
+        ],
+        value="Verified training input",
         label="Input source",
+    )
+    data_replicate = mo.ui.number(
+        1,
+        999,
+        value=1,
+        step=1,
+        label="Replicate (one-based)",
+    )
+    intervention_mode = mo.ui.dropdown(
+        {
+            "Configured data": "configured",
+            "NODAL KO at 0h": "ko_0h",
+            "NODAL KO at 24h": "ko_24h",
+        },
+        value="Configured data",
+        label="One-shot condition",
     )
     initial_condition_path = mo.ui.text(
         placeholder="/path/to/initial_condition.npy",
@@ -288,26 +769,53 @@ def _():
     rollout_seed = mo.ui.number(0, 2**31 - 1, value=0, step=1, label="Seed")
     run_comparison = mo.ui.run_button(label="Run selected models")
     mo.vstack([
-        mo.hstack([evaluation_mode, rollout_steps, rollout_seed]),
+        mo.hstack([
+            evaluation_mode,
+            intervention_mode,
+            data_replicate,
+            rollout_steps,
+            rollout_seed,
+        ]),
         initial_condition_path,
         run_comparison,
     ])
     return (
+        data_replicate,
         evaluation_mode,
         initial_condition_path,
+        intervention_mode,
         rollout_seed,
         rollout_steps,
         run_comparison,
     )
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _():
-    _timepoint_options = ["0h", "12h", "24h", "36h", "48h"]
-    _channel_options = [
+    return
+
+
+@app.cell(hide_code=True)
+def _(comparison_rollouts):
+    _default_timepoints = ["0h", "12h", "24h", "36h", "48h"]
+    _default_channels = [
         "DAPI", "LMBR", "TBXT", "SOX17", "SOX2", "FOXA2",
         "CER1", "LEFTY", "NODAL", "LEF1", "SMAD23",
     ]
+    if comparison_rollouts is None:
+        _timepoint_options = _default_timepoints
+        _channel_options = _default_channels
+    else:
+        _timepoint_options = list(dict.fromkeys(
+            _label
+            for _, _, _labels, _, _ in comparison_rollouts
+            for _label in _labels
+        ))
+        _channel_options = list(dict.fromkeys(
+            _name.rsplit("/", 1)[-1]
+            for _, _, _, _names, _ in comparison_rollouts
+            for _name in _names
+        ))
     timepoint_filter = mo.ui.multiselect(
         options=_timepoint_options,
         value=_timepoint_options,
@@ -324,9 +832,11 @@ def _():
 
 @app.cell(hide_code=True)
 def _(
+    data_replicate,
     data_root,
     evaluation_mode,
     initial_condition_path,
+    intervention_mode,
     results_table,
     rollout_seed,
     rollout_steps,
@@ -348,22 +858,45 @@ def _(
         _registry = ModelRegistry(Path(store_root.value).expanduser())
         _bundles = [_registry.get(_model_id) for _model_id in _selected["model_id"]]
 
-        def _load_verified_input(_bundle):
+        def _load_bundle_input(_bundle):
             _cfg = _bundle.config
+            _data_config = _cfg.data
+            if intervention_mode.value != "configured":
+                if _cfg.data.dataset != "micropatterns_260726":
+                    raise ValueError(
+                        "NODAL one-shot prediction is only available for "
+                        "micropatterns_260726."
+                    )
+                _data_config = replace(
+                    _cfg.data,
+                    knockout=replace(
+                        _cfg.data.knockout,
+                        curriculum=(intervention_mode.value,),
+                    ),
+                )
             _data_root = Path(data_root.value).expanduser()
             if not data_root.value.strip():
                 raise ValueError(
-                    "Set Data root to DATA_PATH_BASE before using verified bundle input."
+                    "Set Data root to DATA_PATH_BASE before using dataset input."
                 )
             if _cfg.data.dataset == "emojis":
+                if evaluation_mode.value != "Verified training input":
+                    raise ValueError(
+                        f"{evaluation_mode.value} is only available for replicate-based "
+                        "micropattern datasets."
+                    )
                 from Experiments.emoji.config_helpers import load_data
 
                 _data_path = _data_root / "Emojis"
                 _data, _ = load_data(_cfg.data, impath=str(_data_path))
                 _boundary = None
                 _channel_names = ()
+                _channel_schema = None
             elif str(_cfg.data.dataset).startswith("micropatterns"):
-                from Experiments.micropatterns.config_helpers import load_data
+                from Experiments.micropatterns.config_helpers import (
+                    load_data,
+                    load_train_validation_data,
+                )
 
                 if _cfg.data.dataset == "micropatterns_260726":
                     _data_path = _data_root / "260726_nca_dataset"
@@ -375,28 +908,86 @@ def _(
                         f"{_data_path}. Set Data root to the directory containing "
                         f"{_data_path.name}."
                     )
-                _data, _, _channel_names, _boundary, _, _ = load_data(
-                    _cfg.data, impath=str(_data_path)
+                _training_data, _ = load_train_validation_data(
+                    _data_config, impath=str(_data_path)
                 )
+                if evaluation_mode.value == "Verified training input":
+                    _loaded_data = _training_data
+                else:
+                    if _cfg.data.dataset != "micropatterns_260726":
+                        raise ValueError(
+                            "Replicate selection is only supported for "
+                            "micropatterns_260726."
+                        )
+                    _replicate = int(data_replicate.value)
+                    if evaluation_mode.value == "Configured validation replicate":
+                        _validation_replicates = tuple(
+                            _data_config.micropattern.validation_replicates
+                        )
+                        if _replicate not in _validation_replicates:
+                            raise ValueError(
+                                f"Replicate {_replicate} is not in {_bundle.id}'s configured "
+                                f"validation replicates {_validation_replicates}."
+                            )
+                    _loaded_data = load_data(
+                        _data_config,
+                        impath=str(_data_path),
+                        replicate_indices=(_replicate - 1,),
+                        histogram_bins=_training_data[1]["histogram_bins"],
+                        pool_copies_override=1,
+                    )
+                _data, _aux, _channel_names, _boundary, _, _ = _loaded_data
+                _channel_schema = _aux.get("channel_schema")
             else:
                 raise ValueError(
                     f"No local evaluation loader is registered for dataset {_cfg.data.dataset!r}."
                 )
-            if "evaluation_input" not in _bundle.manifest:
-                raise ValueError(
-                    f"{_bundle.id} has no evaluation-input fingerprint; republish it or use a specific input."
+            if (
+                evaluation_mode.value == "Verified training input"
+                and intervention_mode.value == "configured"
+            ):
+                if "evaluation_input" not in _bundle.manifest:
+                    raise ValueError(
+                        f"{_bundle.id} has no evaluation-input fingerprint; "
+                        "republish it or use an unverified input."
+                    )
+                verify_evaluation_input(
+                    _data,
+                    _bundle.manifest.evaluation_input,
+                    boundary_mask=_boundary,
                 )
-            verify_evaluation_input(
-                _data,
-                _bundle.manifest.evaluation_input,
-                boundary_mask=_boundary,
-            )
-            _initial = np.asarray(_data)[0, 0]
+            _initial_measurements = np.asarray(_data)[0, 0]
+            if _channel_schema is None:
+                _initial = _initial_measurements
+                _output_channels = tuple(range(_initial.shape[0]))
+                _nodal_channel = None
+            else:
+                _initial = _initial_measurements[
+                    np.asarray(_channel_schema.primary_measurements)
+                ]
+                _output_channels = tuple(_channel_schema.target_to_state)
+                _nodal_channel = (
+                    _channel_schema.state_channels.index("NODAL")
+                    if "NODAL" in _channel_schema.state_channels
+                    else None
+                )
             _boundary = None if _boundary is None else np.asarray(_boundary)[0]
-            return _initial, _boundary, tuple(_channel_names)
+            _true_frames = np.asarray(_data)[0]
+            return (
+                _initial,
+                _boundary,
+                tuple(_channel_names),
+                _output_channels,
+                _true_frames,
+                _nodal_channel,
+            )
 
-        if evaluation_mode.value == "Verified bundle input":
-            _inputs = [_load_verified_input(_bundle) for _bundle in _bundles]
+        if evaluation_mode.value != "Specific .npy input":
+            _inputs = [_load_bundle_input(_bundle) for _bundle in _bundles]
+        if (
+            evaluation_mode.value == "Verified training input"
+            and intervention_mode.value == "configured"
+        ):
             _fingerprint = _bundles[0].manifest.evaluation_input.initial_state.sha256
             _boundary_fingerprint = _bundles[0].manifest.evaluation_input.get(
                 "boundary_mask", None
@@ -409,7 +1000,12 @@ def _(
                 != _boundary_fingerprint
                 for _bundle in _bundles[1:]
             )
-        else:
+        elif evaluation_mode.value == "Specific .npy input":
+            if intervention_mode.value != "configured":
+                raise ValueError(
+                    "NODAL one-shot prediction requires a dataset input so the "
+                    "biological channel schema and matching true data are available."
+                )
             _input_path = Path(initial_condition_path.value).expanduser()
             if not _input_path.is_file():
                 raise ValueError("Specific input must be an existing .npy file.")
@@ -418,14 +1014,38 @@ def _(
                 _initial = _initial[0]
             if _initial.ndim != 3:
                 raise ValueError("Specific input must have shape C x H x W or B x C x H x W.")
-            _inputs = [(_initial, None, ())] * len(_bundles)
+            _inputs = [
+                (
+                    _initial,
+                    None,
+                    (),
+                    tuple(range(_initial.shape[0])),
+                    None,
+                    None,
+                )
+            ] * len(_bundles)
+            _inputs_differ = False
+        else:
             _inputs_differ = False
 
         _rollouts = []
-        for _index, (_bundle, (_initial, _boundary, _channel_names)) in enumerate(
+        for _index, (
+            _bundle,
+            (
+                _initial,
+                _boundary,
+                _channel_names,
+                _output_channels,
+                _true_frames,
+                _nodal_channel,
+            ),
+        ) in enumerate(
             zip(_bundles, _inputs)
         ):
-            _model = _bundle.load_model(key=jr.PRNGKey(int(rollout_seed.value)))
+            _model = _bundle.load_model(
+                key=jr.PRNGKey(int(rollout_seed.value)),
+                implementation="portable",
+            )
             _channels = int(_model.N_CHANNELS)
             if _initial.shape[0] > _channels:
                 raise ValueError(
@@ -437,13 +1057,14 @@ def _(
                 ((0, _channels - _initial.shape[0]), (0, 0), (0, 0)),
             )
             if _boundary is None:
-                _callback = no_boundary()
+                _boundary_state = jnp.zeros((1,), dtype=_state.dtype)
+                _boundary_mode = "none"
             else:
                 _boundary_state = jnp.asarray(_boundary)
-                if _bundle.config.trainer.get("boundary_mode", "soft") == "hard":
-                    _callback = hard_boundary(_boundary_state)
+                if _bundle.config.trainer.boundary_mode == "hard":
+                    _boundary_mode = "hard"
                 else:
-                    _callback = model_boundary(_boundary_state)
+                    _boundary_mode = "soft"
             if str(_bundle.config.data.dataset).startswith("micropatterns"):
                 _time_labels = tuple(
                     f"{int(_hour)}h"
@@ -457,20 +1078,55 @@ def _(
                 for _time_index in range(len(_time_labels))
             )
             _total_steps = max(int(rollout_steps.value), _frame_indices[-1])
-            _trajectory = _model.run(
-                _total_steps,
-                _state,
-                callback=_callback,
-                key=jr.PRNGKey(int(rollout_seed.value) + _index),
-            )
-            _observed_channels = int(_initial.shape[0])
-            _names = list(_channel_names[:_observed_channels])
+            _observation_steps = jnp.asarray(_frame_indices, dtype=jnp.int32)
+            _rollout_key = jr.PRNGKey(int(rollout_seed.value) + _index)
+            if intervention_mode.value == "configured":
+                _selected_states = rollout_model_sampled(
+                    _model,
+                    _state,
+                    _boundary_state,
+                    _boundary_mode,
+                    _rollout_key,
+                    _total_steps,
+                    _observation_steps,
+                )
+            else:
+                if _nodal_channel is None:
+                    raise ValueError(
+                        f"{_bundle.id} has no NODAL state channel and cannot run "
+                        "a NODAL knockout prediction."
+                    )
+                _knockout_hour = 0 if intervention_mode.value == "ko_0h" else 24
+                _knockout_step = (
+                    _knockout_hour // 12
+                ) * _steps_per_observation
+                _selected_states = rollout_model_with_blocked_channel_sampled(
+                    _model,
+                    _state,
+                    _boundary_state,
+                    _boundary_mode,
+                    _rollout_key,
+                    _total_steps,
+                    _nodal_channel,
+                    jnp.asarray(_knockout_step, dtype=jnp.int32),
+                    _observation_steps,
+                )
+            _displayed_channels = len(_output_channels)
+            _names = list(_channel_names[:_displayed_channels])
             _names.extend(
                 f"Channel {_channel_index + 1}"
-                for _channel_index in range(len(_names), _observed_channels)
+                for _channel_index in range(len(_names), _displayed_channels)
             )
-            _frames = np.asarray(_trajectory)[list(_frame_indices), :_observed_channels]
-            _rollouts.append((_bundle, _frames, _time_labels, tuple(_names)))
+            _frames = np.asarray(_selected_states)[:, _output_channels]
+            _rollouts.append(
+                (
+                    _bundle,
+                    _frames,
+                    _time_labels,
+                    tuple(_names),
+                    _true_frames,
+                )
+            )
 
         comparison_rollouts = tuple(_rollouts)
         _input_note = (
@@ -478,6 +1134,11 @@ def _(
             if _inputs_differ
             else ""
         )
+        if intervention_mode.value != "configured":
+            _input_note += (
+                " The selected one-shot condition uses matching experimental "
+                "data and is not covered by the bundle's training-input fingerprint."
+            )
         _status = mo.md(
             f"Ran {len(_bundles)} model(s). Use the display filters to compare subsets."
             f"{_input_note}"
@@ -495,15 +1156,189 @@ def _(channel_filter, comparison_rollouts, timepoint_filter):
             "Select at least one timepoint and one channel.", kind="info"
         )
     else:
-        _figures = []
-        for _bundle, _frames, _time_labels, _channel_names in comparison_rollouts:
+        _tag_maps = {}
+        for _bundle, *_rest in comparison_rollouts:
+            _tags = _bundle.manifest.provenance.wandb.get("tags", ())
+            _tag_maps[_bundle.id] = {
+                _key: _value
+                for _tag in _tags
+                for _key, _separator, _value in [str(_tag).partition(":")]
+                if _separator
+            }
+        _tag_keys = set().union(*(_tags.keys() for _tags in _tag_maps.values()))
+        _varying_tag_keys = sorted(
+            _key
+            for _key in _tag_keys
+            if len({_tags.get(_key) for _tags in _tag_maps.values()}) > 1
+        )
+
+        def _short_tag_key(_key):
+            for _prefix, _replacement in (
+                ("loss.terms.0.", "loss."),
+                ("data.emoji.", "data."),
+                ("data.micropattern.", "data."),
+                ("data.snowmelt.", "data."),
+            ):
+                if _key.startswith(_prefix):
+                    return _replacement + _key.removeprefix(_prefix)
+            return _key
+
+        _selected_times = [
+            _label
+            for _label in timepoint_filter.value
+            if any(_label in _item[2] for _item in comparison_rollouts)
+        ]
+        _selected_channels = [
+            _name
+            for _name in channel_filter.value
+            if any(
+                _name in tuple(_item.rsplit("/", 1)[-1] for _item in _rollout[3])
+                for _rollout in comparison_rollouts
+            )
+        ]
+        if _selected_times and _selected_channels:
+            _column_count = len(comparison_rollouts)
+            _row_count = len(_selected_channels) * len(_selected_times)
+            _figure, _axes = plt.subplots(
+                _row_count,
+                _column_count,
+                figsize=(2.35 * _column_count, 2.15 * _row_count),
+                squeeze=False,
+                gridspec_kw={"wspace": 0.03, "hspace": 0.03},
+            )
+
+            _channel_limits = {}
+            for _channel_name in _selected_channels:
+                _values = []
+                for _, _frames, _, _channel_names, _ in comparison_rollouts:
+                    _base_names = tuple(
+                        _name.rsplit("/", 1)[-1] for _name in _channel_names
+                    )
+                    if _channel_name in _base_names:
+                        _values.append(_frames[:, _base_names.index(_channel_name)])
+                _vmin = min(float(np.nanmin(_value)) for _value in _values)
+                _vmax = max(float(np.nanmax(_value)) for _value in _values)
+                _channel_limits[_channel_name] = (
+                    _vmin,
+                    _vmax if _vmax > _vmin else _vmin + 1.0,
+                )
+
+            for _model_index, (
+                _bundle,
+                _frames,
+                _time_labels,
+                _channel_names,
+                _true_frames,
+            ) in enumerate(comparison_rollouts):
+                _tag_map = _tag_maps[_bundle.id]
+                _differences = [
+                    f"{_short_tag_key(_key)}={_tag_map.get(_key, '—')}"
+                    for _key in _varying_tag_keys
+                ]
+                _height, _width = _frames.shape[-2:]
+                _title = "\n".join(_differences) or _bundle.id
+                _axes[0, _model_index].set_title(
+                    f"{_title}\n{_width}×{_height}px",
+                    fontsize=9,
+                )
+                _base_names = tuple(
+                    _name.rsplit("/", 1)[-1] for _name in _channel_names
+                )
+                for _channel_index, _channel_name in enumerate(_selected_channels):
+                    for _time_index, _time_label in enumerate(_selected_times):
+                        _row_index = (
+                            _channel_index * len(_selected_times) + _time_index
+                        )
+                        _axis = _axes[_row_index, _model_index]
+                        if (
+                            _time_label in _time_labels
+                            and _channel_name in _base_names
+                        ):
+                            _axis.imshow(
+                                _frames[
+                                    _time_labels.index(_time_label),
+                                    _base_names.index(_channel_name),
+                                ],
+                                cmap="gray",
+                                vmin=_channel_limits[_channel_name][0],
+                                vmax=_channel_limits[_channel_name][1],
+                                interpolation="nearest",
+                            )
+                        else:
+                            _axis.set_facecolor("#eeeeee")
+                            _axis.text(
+                                0.5,
+                                0.5,
+                                "not available",
+                                ha="center",
+                                va="center",
+                                color="#777777",
+                                fontsize=8,
+                                transform=_axis.transAxes,
+                            )
+                        if _model_index == 0:
+                            _axis.set_ylabel(
+                                f"{_channel_name}\n{_time_label}",
+                                rotation=0,
+                                ha="right",
+                                va="center",
+                            )
+                        _axis.set_xticks([])
+                        _axis.set_yticks([])
+            _figure.tight_layout(pad=0.4, w_pad=0.15, h_pad=0.15)
+            _comparison = mo.vstack([
+                mo.md(
+                    "Columns are models; rows are shared channel/timepoint pairs. "
+                    "Each channel uses one intensity scale across every model."
+                ),
+                _figure,
+            ])
+        else:
+            _comparison = mo.callout(
+                "None of the selected models contain the chosen channels or timepoints.",
+                kind="info",
+            )
+    _comparison
+    return
+
+
+@app.cell(hide_code=True)
+def _(channel_filter, comparison_rollouts, timepoint_filter):
+    if comparison_rollouts is None:
+        _truth_panel = mo.md("")
+    else:
+        _unique_truth = []
+        for (
+            _bundle,
+            _frames,
+            _time_labels,
+            _channel_names,
+            _true_frames,
+        ) in comparison_rollouts:
+            if _true_frames is None:
+                continue
+            _candidate = (_true_frames, _time_labels, _channel_names)
+            _already_present = any(
+                _time_labels == _existing_times
+                and _channel_names == _existing_channels
+                and np.array_equal(_true_frames, _existing_frames, equal_nan=True)
+                for _existing_frames, _existing_times, _existing_channels
+                in _unique_truth
+            )
+            if not _already_present:
+                _unique_truth.append(_candidate)
+
+        _truth_figures = []
+        for _true_frames, _time_labels, _channel_names in _unique_truth:
             _time_indices = [
                 _index for _index, _label in enumerate(_time_labels)
                 if _label in timepoint_filter.value
+                and _index < _true_frames.shape[0]
             ]
             _channel_indices = [
                 _index for _index, _name in enumerate(_channel_names)
                 if _name.rsplit("/", 1)[-1] in channel_filter.value
+                and _index < _true_frames.shape[1]
             ]
             if not _time_indices or not _channel_indices:
                 continue
@@ -511,7 +1346,9 @@ def _(channel_filter, comparison_rollouts, timepoint_filter):
             _selected_channels = tuple(
                 _channel_names[_index] for _index in _channel_indices
             )
-            _selected_frames = _frames[np.ix_(_time_indices, _channel_indices)]
+            _selected_truth = _true_frames[
+                np.ix_(_time_indices, _channel_indices)
+            ]
             _row_count = len(_selected_channels)
             _column_count = len(_selected_times)
             _figure, _axes = plt.subplots(
@@ -519,9 +1356,10 @@ def _(channel_filter, comparison_rollouts, timepoint_filter):
                 _column_count,
                 figsize=(2.2 * _column_count, 2.2 * _row_count),
                 squeeze=False,
+                gridspec_kw={"wspace": 0.02, "hspace": 0.02},
             )
             for _channel_index, _channel_name in enumerate(_selected_channels):
-                _channel_frames = _selected_frames[:, _channel_index]
+                _channel_frames = _selected_truth[:, _channel_index]
                 _vmin = float(np.nanmin(_channel_frames))
                 _vmax = float(np.nanmax(_channel_frames))
                 if _vmax <= _vmin:
@@ -537,20 +1375,39 @@ def _(channel_filter, comparison_rollouts, timepoint_filter):
                     if _channel_index == 0:
                         _axis.set_title(_time_label)
                     if _time_index == 0:
-                        _axis.set_ylabel(_channel_name, rotation=0, ha="right", va="center")
+                        _axis.set_ylabel(
+                            _channel_name,
+                            rotation=0,
+                            ha="right",
+                            va="center",
+                        )
                     _axis.set_xticks([])
                     _axis.set_yticks([])
-            # _figure.suptitle(str(_bundle.manifest.slug), fontsize=10)
-            _figure.tight_layout()
-            _figures.append(_figure)
-        if _figures:
-            _comparison = mo.hstack(_figures)
-        else:
-            _comparison = mo.callout(
-                "None of the selected models contain the chosen channels or timepoints.",
+            _figure.tight_layout(pad=0.3, w_pad=0.1, h_pad=0.1)
+            _truth_figures.append(_figure)
+
+        if _truth_figures:
+            _truth_panel = mo.vstack([
+                mo.md("## Selected true data"),
+                mo.hstack(
+                    _truth_figures,
+                    justify="start",
+                    align="start",
+                    wrap=True,
+                    gap=0.25,
+                ),
+            ])
+        elif any(_item[4] is None for _item in comparison_rollouts):
+            _truth_panel = mo.callout(
+                "No true-data sequence is available for a specific `.npy` input.",
                 kind="info",
             )
-    _comparison
+        else:
+            _truth_panel = mo.callout(
+                "The selected true data has no matching displayed channels or timepoints.",
+                kind="info",
+            )
+    _truth_panel
     return
 
 

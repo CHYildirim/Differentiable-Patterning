@@ -1,38 +1,36 @@
 import jax
 import equinox as eqx
-import time
-import json
-import jax.random as jr
 import diffrax
-from PDE.model.reaction_diffusion_advection.update import F
 
-from Common.model.abstract_model import AbstractModel
+SOLVERS = {
+	"heun": diffrax.Heun,
+	"euler": diffrax.Euler,
+	"tsit5": diffrax.Tsit5,
+	"kencarp3": diffrax.KenCarp3,
+	"dopri5": diffrax.Dopri5,
+	"kvaerno3": diffrax.Kvaerno3,
+	"dopri8": diffrax.Dopri8,
+}
 
-class PDE_solver(AbstractModel):
+
+class PDE_solver(eqx.Module):
+	"""Method-of-lines solver: integrates dX/dt = F(t, X, args) with diffrax.
+
+	Calling ``PDE_solver(F)(ts, y0)`` returns ``(ts, ys)`` where ``ys`` holds the
+	state at every time in ``ts`` (including ``ts[0]``), stacked on axis 0.
+	"""
 	func: eqx.Module
 	SOLVER: diffrax.AbstractSolver
 	stepsize_controller: diffrax.AbstractStepSizeController
 	dt0: float
-	def __init__(self,F,dt=0.1,SOLVER="heun",ADAPTIVE=False,DTYPE="float32",rtol=1e-3,atol=1e-3):
-		
-		self.dt0 = dt
-		if SOLVER=="heun":
-			self.SOLVER = diffrax.Heun()
-		elif SOLVER=="euler":
-			self.SOLVER = diffrax.Euler()
-		elif SOLVER=="tsit5":
-			self.SOLVER = diffrax.Tsit5()
-		elif SOLVER=="kencarp3":
-			self.SOLVER = diffrax.KenCarp3()
-		elif SOLVER=="dopri5":
-			self.SOLVER = diffrax.Dopri5()
-		elif SOLVER=="kvaerno3":
-			self.SOLVER = diffrax.Kvaerno3()
-		elif SOLVER=="dopri8":
-			self.SOLVER = diffrax.Dopri8()
-		
-		
+	max_steps: int = eqx.field(static=True)
 
+	def __init__(self,F,dt=0.1,SOLVER="heun",ADAPTIVE=False,DTYPE="float32",rtol=1e-3,atol=1e-3,max_steps=100_000):
+		if SOLVER not in SOLVERS:
+			raise ValueError(f"Unknown solver {SOLVER!r}; choose from {sorted(SOLVERS)}")
+		self.SOLVER = SOLVERS[SOLVER]()
+		self.dt0 = dt
+		self.max_steps = max_steps
 
 		if ADAPTIVE:
 			self.stepsize_controller=diffrax.PIDController(rtol=rtol, atol=atol)
@@ -44,7 +42,7 @@ class PDE_solver(AbstractModel):
 				if eqx.is_inexact_array(x):
 					return x.astype(jax.dtypes.bfloat16)
 				else:
-					return x	
+					return x
 			self.func = jax.tree_util.tree_map(to_bfloat16, F)
 		else:
 			self.func = F
@@ -55,36 +53,7 @@ class PDE_solver(AbstractModel):
 									   t0=ts[0],t1=ts[-1],
 									   dt0=self.dt0,
 									   y0=y0,
-									   max_steps=1000*ts.shape[0],
-									   #stepsize_controller=diffrax.ConstantStepSize(),
-									   #stepsize_controller=diffrax.PIDController(rtol=self.rtol, atol=self.atol),
+									   max_steps=self.max_steps,
 									   stepsize_controller=self.stepsize_controller,
 									   saveat=diffrax.SaveAt(ts=ts))
 		return solution.ts,solution.ys
-	
-	def partition(self):
-		func_diff,func_static = self.func.partition()
-		where = lambda s:s.func
-		total_diff,total_static = eqx.partition(self,eqx.is_array)
-		total_diff = eqx.tree_at(where,total_diff,func_diff)
-		total_static=eqx.tree_at(where,total_static,func_static)
-		return total_diff,total_static
-		
-def load(path):
-	with open(path, "rb") as f:
-		hyperparams = json.loads(f.readline().decode())
-		print("PDE hyperparameters: ")
-		print(json.dumps(hyperparams["pde"],sort_keys=True, indent=4))
-		print("Solver hyperparameters: ")
-		print(json.dumps(hyperparams["solver"],sort_keys=True, indent=4))
-		func = F(key=jr.PRNGKey(0), **hyperparams["pde"])
-		pde = PDE_solver(func,**hyperparams["solver"])
-		return eqx.tree_deserialise_leaves(f, pde)
-	#def set_weights(self,weights):
-	#	self.func.set_weights(weights)
-def save(filename,hyperparams,model):
-	filename = filename+".eqx"
-	with open(filename, "wb") as f:
-		hyperparam_str = json.dumps(hyperparams)
-		f.write((hyperparam_str + "\n").encode())
-		eqx.tree_serialise_leaves(f, model)

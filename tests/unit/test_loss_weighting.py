@@ -2,9 +2,11 @@ import jax.numpy as jnp
 import pytest
 from types import SimpleNamespace
 
-from Common.trainer.loss import build_loss_functions, l2_colony_grouped
-from Common.trainer.loss_vgg import grouped_vgg_triplet_weights
-from Experiments.config_helpers import build_loss_args, build_loss_filename
+from Common.trainer.loss_micropattern import l2_colony_grouped
+from Common.trainer.loss_table import build_loss_functions
+from Common.trainer.loss_micropattern import grouped_vgg_triplet_weights
+from Experiments.config_helpers import build_loss_filename
+from NCA.trainer.objective import resolve_objective
 from Experiments.config_workflow import generate_manifest
 from NCA.trainer.objective import (
     combine_loss_components,
@@ -108,22 +110,25 @@ def test_channel_importance_validation_rejects_bad_grouped_configuration():
 
 
 def test_loss_config_plumbing_and_filename_include_non_default_weights():
+    from Common.trainer.config import (
+        GroupedPointwiseLossConfig,
+        LossConfig,
+        VggLossConfig,
+    )
+
     cfg = SimpleNamespace(
-        loss=SimpleNamespace(
-            terms=[
-                SimpleNamespace(
+        loss=LossConfig(
+            terms=(
+                VggLossConfig(
                     type="vgg_grouped", weight=1.0,
-                    metric="l2", random_crop=False,
-                    random_channel_shuffle=False,
-                    channel_importance=[1.0, 1.0, 1.0, 4.0] + [1.0] * 8,
+                    channel_importance=(1.0, 1.0, 1.0, 4.0) + (1.0,) * 8,
                 ),
-                SimpleNamespace(type="l2_grouped", weight=2.0),
-            ],
-            regularisers={},
+                GroupedPointwiseLossConfig(type="l2_grouped", weight=2.0),
+            ),
         )
     )
 
-    args = build_loss_args(cfg.loss)
+    args = resolve_objective(cfg.loss).arguments
     filename = build_loss_filename(cfg.loss)
 
     assert args["channel_importance"][3] == 4.0

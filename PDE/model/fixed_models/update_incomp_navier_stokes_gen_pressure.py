@@ -1,19 +1,17 @@
 import equinox as eqx
+from jaxtyping import Array, Float, PyTree
 
-from jaxtyping import Array, Float, PyTree, Scalar
-from einops import rearrange,reduce
 from Common.model.spatial_operators import Ops
 
-#TODO: Return to this once a gauss-seidel or relaxation solver is added to lineax
 
 class F(eqx.Module):
     ops: Ops
-    rho: Float
-    nu: Float
-    M: Float
-    D: Float
+    rho: float
+    nu: float
+    M: float
+    D: float
     forcing: Array
-    
+
     def __init__(self,
                  PADDING,
                  dx,
@@ -23,22 +21,37 @@ class F(eqx.Module):
                  M = 1.0,
                  D = 1.0,
                  KERNEL_SCALE=1,
-                
                  ):
-        """Implementation of incompressible navier stokes, with generalised pressure solver
+        """Near-incompressible Navier-Stokes (artificial compressibility), advecting a passive scalar S.
 
-        Args:
-            PADDING (str): Boundary type: 'ZEROS', 'REFLECT', 'REPLICATE' or 'CIRCULAR'
-            dx (float): _description_
-            
+        The state is the tuple (V, P, S), with V of shape [2, C, x, y]:
+        dV = -(V.grad)V - grad(P)/rho + nu*Lap(V) + forcing
+        dP = nu*Lap(P) + div(V)/M^2
+        dS = D*Lap(S) - V.grad(S)
+
+        Parameters
+        ----------
+        PADDING : str
+            Boundary type: 'ZEROS', 'REFLECT', 'REPLICATE' or 'CIRCULAR'
+        dx : float
+            Grid spacing
+        forcing : array
+            Body force, broadcastable to V
+        rho : float, optional
+            Density. Defaults to 1.0.
+        nu : float, optional
+            Viscosity. Defaults to 0.1.
+        M : float, optional
+            Artificial Mach number; smaller is closer to incompressible. Defaults to 1.0.
+        D : float, optional
+            Scalar diffusion. Defaults to 1.0.
+        KERNEL_SCALE : int, optional
+            Spatial operator kernel size. Defaults to 1.
         """
-        
-      
         self.ops = Ops(PADDING,dx,KERNEL_SCALE,SMOOTHING=1)
         self.forcing = forcing
         self.rho = rho
         self.nu = nu
-        
         self.M = M
         self.D = D
 
@@ -46,14 +59,14 @@ class F(eqx.Module):
                 t: Float,
                 X: PyTree,
                 args)->PyTree:
-        
+
         (V,P,S)=X
 
-        dV = (-self.ops.VectorMatDiff(V,V) 
+        dV = (-self.ops.VectorMatDiff(V,V)
               - self.ops.Grad(P)/self.rho
-              + self.nu*self.ops.VectorLaplacian(V) 
+              + self.nu*self.ops.VectorLaplacian(V)
               + self.forcing)
-        
+
         dP = self.nu*self.ops.Lap(P) + self.ops.Div(V)/(self.M**2)
         dS = self.D*self.ops.Lap(S) - self.ops.MatDiff(V,S)
 

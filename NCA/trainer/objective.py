@@ -1,6 +1,6 @@
-"""Resolve typed loss configuration into the existing JAX loss primitives."""
+"""Turn the typed loss config into the JAX loss functions used in training."""
 
-from dataclasses import dataclass
+from dataclasses import fields, dataclass
 from typing import Any
 
 import jax.numpy as jnp
@@ -47,12 +47,14 @@ def resolve_objective(loss_config, overrides=None) -> ResolvedObjective:
     }
     ignored = {"type", "weight", "schedule", "multi_target_schedules"}
     for term in terms:
-        for name, value in term.items():
+        for name, value in ((item.name, getattr(term, item.name)) for item in fields(term)):
             if name in ignored or value is None:
                 continue
-            runtime_name = "internal_loss_func" if name == "metric" else name
-            if name == "metric" and "vgg" in term.type:
-                runtime_name = "metric"
+            # "metric" chooses the VGG variant for the VGG-based losses, and
+            # the patch distance (internal_loss_func) for the OT losses.
+            runtime_name = name
+            if name == "metric" and not ("vgg" in term.type or term.type == "multi_target"):
+                runtime_name = "internal_loss_func"
             if runtime_name in arguments and arguments[runtime_name] != value:
                 raise ValueError(
                     "Loss terms require conflicting values for "

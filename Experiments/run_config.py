@@ -12,7 +12,6 @@ from omegaconf import OmegaConf
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 os.chdir(REPO_ROOT)
-sys.path.insert(0, str(REPO_ROOT))
 
 workflow = importlib.import_module("Experiments.config_workflow")
 import_callable = workflow.import_callable
@@ -42,17 +41,8 @@ def synchronize_jax(jax_module: Any) -> None:
     jax_module.block_until_ready(jax_module.device_put(0))
 
 
-def optional_cfg_value(cfg: Any, path: str, default: Any = None) -> Any:
-    value = cfg
-    for part in path.split("."):
-        value = getattr(value, part, default)
-        if value is default:
-            break
-    return value
-
-
 def apply_runtime_overrides(cfg: Any) -> None:
-    """Apply deployment-specific paths without embedding them in manifests."""
+    """Set ``model_store.root`` from ``MODEL_STORE_ROOT`` if it is set."""
     model_store_root = os.getenv("MODEL_STORE_ROOT")
     if model_store_root and OmegaConf.select(cfg, "model_store", default=None) is not None:
         OmegaConf.update(cfg, "model_store.enabled", True, force_add=True)
@@ -63,7 +53,7 @@ def apply_runtime_overrides(cfg: Any) -> None:
 def apply_experiment_defaults(
     cfg: Any, experiment_name: Any, overrides: Any = None
 ) -> None:
-    """Propagate sweep-level identity into a selected run configuration."""
+    """Set ``experiment.name`` (and the W&B group, unless overridden) from the sweep name."""
     if not experiment_name:
         return
     OmegaConf.update(cfg, "experiment.name", str(experiment_name), force_add=True)
@@ -80,7 +70,7 @@ def configure_xla_flags(cfg: Any) -> None:
         "command_buffer": "--xla_gpu_enable_command_buffer=FUSION",
     }
 
-    xla_flags = optional_cfg_value(cfg, "system.xla_flags")
+    xla_flags = cfg.system.xla_flags
     if xla_flags:
         flag_parts: list[str] = []
         for flag in xla_flags:
@@ -97,7 +87,7 @@ def configure_jax_runtime(cfg: Any) -> Any:
 
     import jax
 
-    precision = optional_cfg_value(cfg, "system.precision", default="highest")
+    precision = cfg.system.precision
     jax.config.update("jax_default_matmul_precision", str(precision))
     print(f"jax_default_matmul_precision={precision}")
 

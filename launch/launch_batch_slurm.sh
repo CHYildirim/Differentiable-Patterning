@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 2 ]]; then
+    echo "Usage: $0 PATH_TO_PYTHON_SCRIPT PATH_TO_MANIFEST"
+    exit 1
+fi
+
+PY_SCRIPT="$(realpath "$1")"
+MANIFEST="$(realpath "$2")"
+
+[[ -f "$PY_SCRIPT" ]] || { echo "Python script not found: $PY_SCRIPT"; exit 1; }
+[[ -f "$MANIFEST" ]] || { echo "Manifest not found: $MANIFEST"; exit 1; }
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/manifest.sh"
+
+EXPERIMENT_NAME="$(manifest_experiment_name "$MANIFEST")"
+[[ -n "$EXPERIMENT_NAME" ]] || { echo "Could not derive experiment name from manifest: $MANIFEST"; exit 1; }
+
+N_JOBS="$(manifest_count "$MANIFEST")"
+[[ "$N_JOBS" =~ ^[0-9]+$ ]] || { echo "Manifest count is not an integer: $N_JOBS"; exit 1; }
+[[ "$N_JOBS" -gt 0 ]] || { echo "Manifest contains no runnable lines"; exit 1; }
+
+# -------------------------
+# Slurm settings
+# -------------------------
+
+IO_ROOT="${SLURM_IO_ROOT:-/home/rc-rich1/rds/rds-airr-p100-NQDJLHPwRqs}"
+IO_ROOT="${IO_ROOT%/}"
+CODE_ROOT="${SLURM_CODE_ROOT:-$(cd "$(dirname "$PY_SCRIPT")/.." && pwd)}"
+CODE_ROOT="${CODE_ROOT%/}"
+
+# The Slurm array name defaults to the manifest's experiment name;
+# SLURM_JOB_NAME overrides it.
+JOB_NAME="${SLURM_JOB_NAME:-$EXPERIMENT_NAME}"
+TIME="${SLURM_TIME:-12:00:00}"
+
+MEM="${SLURM_MEM:-64G}"
+ARRAY_PARALLELISM="${SLURM_ARRAY_PARALLELISM:-4}"
+LOG_DIR="${SLURM_LOG_DIR:-$IO_ROOT/slurm_logs/$EXPERIMENT_NAME}"
+PROFILE_GPU="${PROFILE_GPU:-0}"
+
+[[ "$ARRAY_PARALLELISM" =~ ^[0-9]+$ ]] || { echo "SLURM_ARRAY_PARALLELISM must be an integer: $ARRAY_PARALLELISM"; exit 1; }
+[[ "$ARRAY_PARALLELISM" -gt 0 ]] || { echo "SLURM_ARRAY_PARALLELISM must be greater than zero"; exit 1; }
+[[ "$PROFILE_GPU" == "0" || "$PROFILE_GPU" == "1" ]] || { echo "PROFILE_GPU must be 0 or 1: $PROFILE_GPU"; exit 1; }
+
+mkdir -p "$LOG_DIR"
+
+ARRAY_SCRIPT="$SCRIPT_DIR/launch_slurm.sh"
+
+[[ -f "$ARRAY_SCRIPT" ]] || { echo "Missing array script: $ARRAY_SCRIPT"; exit 1; }
+
+echo "Submitting Slurm array with launch script: $ARRAY_SCRIPT"
+echo "Experiment: $EXPERIMENT_NAME"
+echo "Array: 0-$((N_JOBS - 1))%$ARRAY_PARALLELISM"
+echo "Logs: $LOG_DIR"
+echo "GPU profiling: $PROFILE_GPU"
+
+sbatch \
+    --job-name="$JOB_NAME" \
+    --partition="pvc9" \
+    --array="0-$((N_JOBS - 1))%$ARRAY_PARALLELISM" \
+    --time="$TIME" \
+    --mem="$MEM" \
+    --nodes=1 \
+    --ntasks=1 \
+    --gres="gpu:1" \
+    --output="$LOG_DIR/%A/%a.out" \
+    --error="$LOG_DIR/%A/%a.err" \
+    --export=ALL,PY_SCRIPT="$PY_SCRIPT",MANIFEST="$MANIFEST",N_JOBS="$N_JOBS",SLURM_IO_ROOT="$IO_ROOT",SLURM_CODE_ROOT="$CODE_ROOT",SLURM_LOG_DIR="$LOG_DIR",PROFILE_GPU="$PROFILE_GPU" \
+    "$ARRAY_SCRIPT"

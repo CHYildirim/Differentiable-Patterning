@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 OmegaConf = pytest.importorskip("omegaconf").OmegaConf
 
-from NCA.registry import (
+from Experiments.model_registry import (
     ModelRegistry,
     create_model_id,
     evaluation_input_provenance,
@@ -29,6 +29,16 @@ def _config():
         "group": "test-group",
         "tags": ["paper-candidate"],
     }
+    return experiment_config_from_mapping(value)
+
+
+def _retired_family_config(family):
+    value = OmegaConf.to_container(
+        OmegaConf.load("Experiments/emoji/conf/base_config.yaml"),
+        resolve=True,
+    )
+    value["model"]["family"] = family
+    value["model"]["channels"] = 4
     return experiment_config_from_mapping(value)
 
 
@@ -101,6 +111,9 @@ def test_get_ignores_unrelated_bundle_with_unsupported_schema(tmp_path):
     assert registry.get(bundle.id).path == bundle.path
     with pytest.raises(ValueError, match="Unsupported bundle schema version 1"):
         registry.get("legacy-id")
+    with pytest.warns(UserWarning, match="Skipped 1 legacy model bundle"):
+        registry.reindex()
+    assert set(registry.models_df()["model_id"]) == {bundle.id}
 
 
 def test_evaluation_input_provenance_is_compact_and_data_sensitive(tmp_path):
@@ -219,7 +232,7 @@ def test_load_model_reconstructs_from_saved_factory(tmp_path, monkeypatch):
         return FakeModel(), "description"
 
     monkeypatch.setattr(
-        "NCA.registry.importlib.import_module",
+        "Experiments.model_registry.importlib.import_module",
         lambda name: SimpleNamespace(build=build),
     )
     key = object()
@@ -230,6 +243,82 @@ def test_load_model_reconstructs_from_saved_factory(tmp_path, monkeypatch):
         "key": key,
         "checkpoint": bundle.checkpoint_path,
     }
+
+
+@pytest.mark.parametrize(
+    ("recorded_family", "portable_module", "portable_class"),
+    [
+        ("NCA_sycl", "NCA.model.NCA_model", "NCA"),
+        ("NCA_fast", "NCA.model.NCA_model", "NCA"),
+        ("gNCA_sycl", "NCA.model.NCA_model", "NCA"),
+    ],
+)
+def test_load_model_portably_reconstructs_retired_families(
+    tmp_path, recorded_family, portable_module, portable_class
+):
+    eqx = pytest.importorskip("equinox")
+    jax = pytest.importorskip("jax")
+    jnp = pytest.importorskip("jax.numpy")
+    jr = pytest.importorskip("jax.random")
+    from NCA.model.factory import build_model
+
+    cfg = _retired_family_config(recorded_family)
+    source, _ = build_model(cfg.model, key=jr.PRNGKey(3))
+    checkpoint = tmp_path / "source.eqx"
+    source.save(checkpoint)
+    bundle = publish_model_bundle(
+        store_root=tmp_path,
+        collection="portable-tests",
+        model_id=create_model_id(cfg),
+        display_name=recorded_family,
+        checkpoint_path=checkpoint,
+        cfg=cfg,
+        training_result=TrainingResult(checkpoint, 2, 1.5, True),
+        repository_root=tmp_path,
+    )
+
+    # Portable loading is the default so archived Intel bundles work directly
+    # on CPU and CUDA without importing the retired backend.
+    loaded = bundle.load_model(key=jr.PRNGKey(9))
+    source_arrays = [
+        leaf for leaf in jax.tree_util.tree_leaves(source) if eqx.is_array(leaf)
+    ]
+    loaded_arrays = [
+        leaf for leaf in jax.tree_util.tree_leaves(loaded) if eqx.is_array(leaf)
+    ]
+
+    assert type(loaded).__module__ == portable_module
+    assert type(loaded).__name__ == portable_class
+    assert len(source_arrays) == len(loaded_arrays)
+    assert all(
+        jnp.array_equal(source_leaf, loaded_leaf)
+        for source_leaf, loaded_leaf in zip(source_arrays, loaded_arrays)
+    )
+    state = jr.normal(jr.PRNGKey(10), (cfg.model.channels, 8, 9))
+    updated = loaded(state, key=jr.PRNGKey(11))
+    assert updated.shape == state.shape
+    assert jnp.all(jnp.isfinite(updated))
+
+    with pytest.raises(ValueError, match="has been retired"):
+        bundle.load_model(key=jr.PRNGKey(12), implementation="recorded")
+
+
+def test_load_model_rejects_unknown_implementation(tmp_path):
+    checkpoint = tmp_path / "source.eqx"
+    checkpoint.write_bytes(b"checkpoint")
+    bundle = publish_model_bundle(
+        store_root=tmp_path,
+        collection="tests",
+        model_id=create_model_id(_config()),
+        display_name="model",
+        checkpoint_path=checkpoint,
+        cfg=_config(),
+        training_result=TrainingResult(checkpoint, 2, 1.5, True),
+        repository_root=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="implementation"):
+        bundle.load_model(implementation="unknown")
 
 
 def test_annotations_are_separate_and_queryable(tmp_path):
@@ -257,3 +346,31 @@ def test_annotations_are_separate_and_queryable(tmp_path):
     assert annotation["alias"] == "baseline"
     assert annotation["notes"] == "Useful"
     assert not (bundle.path / "annotations.yaml").exists()
+
+
+def test_selection_round_trips_through_yaml(tmp_path):
+    from omegaconf import OmegaConf
+
+    from Experiments.model_registry import load_selection, selection_document
+
+    path = tmp_path / "selection.yaml"
+    OmegaConf.save(OmegaConf.create(selection_document([{"model_id": "a"}, {"model_id": "b"}])), path)
+
+    assert [record["model_id"] for record in load_selection(path)] == ["a", "b"]
+
+    OmegaConf.save(OmegaConf.create({"schema_version": 1, "models": [{"alias": "x"}]}), path)
+    with pytest.raises(ValueError, match="model_id"):
+        load_selection(path)
+    with pytest.raises(FileNotFoundError):
+        load_selection(tmp_path / "missing.yaml")
+
+
+def test_selection_parses_from_yaml_text():
+    from omegaconf import OmegaConf
+
+    from Experiments.model_registry import parse_selection, selection_document
+
+    text = OmegaConf.to_yaml(OmegaConf.create(selection_document([{"model_id": "a"}])))
+    assert [record["model_id"] for record in parse_selection(text)] == ["a"]
+    with pytest.raises(ValueError, match="schema_version"):
+        parse_selection("models: []")

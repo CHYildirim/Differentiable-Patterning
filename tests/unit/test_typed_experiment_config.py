@@ -17,6 +17,7 @@ from Experiments.config import (
     [
         Path("Experiments/emoji/conf/base_config.yaml"),
         Path("Experiments/micropatterns/conf/base_config.yaml"),
+        Path("Experiments/pde/conf/base_config.yaml"),
     ],
 )
 def test_active_base_configs_convert_and_round_trip(path):
@@ -24,6 +25,19 @@ def test_active_base_configs_convert_and_round_trip(path):
 
     assert isinstance(config, ExperimentConfig)
     assert experiment_config_from_mapping(config_to_dict(config)) == config
+
+
+def test_micropattern_initialization_and_curriculum_are_typed():
+    value = yaml.safe_load(
+        Path("Experiments/micropatterns/conf/base_config.yaml").read_text()
+    )
+    value["initialization"]["model_id"] = "baseline-model"
+    value["data"]["knockout"]["curriculum"] = ["baseline", "ko_24h"]
+
+    config = experiment_config_from_mapping(value)
+
+    assert config.initialization.model_id == "baseline-model"
+    assert config.data.knockout.curriculum == ("baseline", "ko_24h")
 
 
 def test_unknown_fields_are_rejected_with_their_section():
@@ -125,48 +139,29 @@ def test_augmentation_schedule_is_owned_by_data_config():
     assert config.data.micropattern.intermediate_reinjection_probability_end == 0.8
 
 
-def test_trainer_backend_defaults_to_unconstrained_jax():
-    value = yaml.safe_load(
-        Path("Experiments/emoji/conf/base_config.yaml").read_text()
-    )
-
-    config = experiment_config_from_mapping(value)
-
-    assert config.training.trainer.backend.type == "none"
-
-
-def test_sycl_trainer_settings_are_scoped_to_sycl_backend():
+@pytest.mark.parametrize(
+    "backend", [{"type": "nvidia"}, {"type": "sycl", "fused_steps": 4}]
+)
+def test_older_configs_with_a_trainer_backend_still_load(backend):
     value = yaml.safe_load(
         Path("Experiments/micropatterns/conf/base_config.yaml").read_text()
     )
-    value["trainer"]["backend"] = {"type": "sycl", "fused_steps": 4}
-    value["model"]["family"] = "NCA_sycl"
+    value["schema_version"] = 2
+    value["trainer"]["backend"] = backend
 
     config = experiment_config_from_mapping(value)
 
-    assert config.training.trainer.backend.type == "sycl"
-    assert config.training.trainer.backend.fused_steps == 4
+    assert not hasattr(config.trainer, "backend")
 
 
-def test_default_backend_rejects_sycl_only_settings():
+def test_current_configs_reject_a_trainer_backend():
     value = yaml.safe_load(
         Path("Experiments/micropatterns/conf/base_config.yaml").read_text()
-    )
-    value["trainer"]["backend"] = {"type": "none", "fused_steps": 4}
-
-    with pytest.raises(ValueError, match="training.trainer.backend.*fused_steps"):
-        experiment_config_from_mapping(value)
-
-
-def test_nvidia_backend_uses_the_standard_jax_trainer_configuration():
-    value = yaml.safe_load(
-        Path("Experiments/emoji/conf/base_config.yaml").read_text()
     )
     value["trainer"]["backend"] = {"type": "nvidia"}
 
-    config = experiment_config_from_mapping(value)
-
-    assert config.training.trainer.backend.type == "nvidia"
+    with pytest.raises(ValueError, match="trainer.*backend"):
+        experiment_config_from_mapping(value)
 
 
 def test_impulse_workflow_has_a_separate_typed_root():
@@ -178,3 +173,29 @@ def test_impulse_workflow_has_a_separate_typed_root():
 
     assert isinstance(config, ImpulseExperimentConfig)
     assert config.impulse.rollout.steps == 64
+    assert config.checkpoint.model_id == "REPLACE_WITH_MODEL_ID"
+    # A null data section means the model bundle's own training data.
+    assert config.data is None
+
+
+def test_impulse_config_rejects_a_model_section():
+    value = yaml.safe_load(
+        Path("Experiments/impulse/conf/base_config.yaml").read_text()
+    )
+    value["model"] = {"family": "NCA", "channels": 32}
+
+    with pytest.raises(ValueError, match="checkpoint.model_id"):
+        impulse_experiment_config_from_mapping(value)
+
+
+def test_impulse_config_accepts_an_explicit_data_section():
+    value = yaml.safe_load(
+        Path("Experiments/impulse/conf/base_config.yaml").read_text()
+    )
+    value["data"] = yaml.safe_load(
+        Path("Experiments/emoji/conf/base_config.yaml").read_text()
+    )["data"]
+
+    config = impulse_experiment_config_from_mapping(value)
+
+    assert config.data.dataset == "emojis"

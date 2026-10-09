@@ -48,13 +48,13 @@ class FastKaNCA(NCA):
         if key is None:
             key = jax.random.PRNGKey(int(time.time()))
         super().__init__(
-            N_CHANNELS,
-            KERNEL_STR,
-            ACTIVATION,
-            PADDING,
-            FIRE_RATE,
-            KERNEL_SCALE,
-            key,
+            N_CHANNELS=N_CHANNELS,
+            KERNEL_STR=KERNEL_STR,
+            ACTIVATION=ACTIVATION,
+            PADDING=PADDING,
+            FIRE_RATE=FIRE_RATE,
+            KERNEL_SCALE=KERNEL_SCALE,
+            key=key,
         )
 
         default_kan_aux = {
@@ -141,11 +141,6 @@ class FastKaNCA(NCA):
             },
         }
 
-    def get_weights(self):  # type: ignore
-        diff_self, _ = self.partition()
-        weights, _tree_def = jax.tree_util.tree_flatten(diff_self)
-        return list(map(jnp.squeeze, weights))
-
     def get_edge_norms(self):
         return [layer.layer.edge_norms() for layer in self.layers]
 
@@ -155,8 +150,8 @@ class FastKaNCA(NCA):
     def get_kan_layer_inputs_outputs(self, x):
         """Return diagnostic KAN layer input/output tensors for one NCA state.
 
-        This intentionally avoids fire-rate masking and boundary callbacks. It
-        exposes the deterministic update rule internals used by the KAN layers.
+        Skips fire-rate masking and boundary callbacks, so this is the
+        deterministic update rule only.
         """
         if x.ndim != 3 or x.shape[0] != self.N_CHANNELS:
             raise ValueError(

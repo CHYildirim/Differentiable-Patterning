@@ -1,4 +1,4 @@
-"""Runtime inputs that are derived while assembling an NCA experiment."""
+"""Runtime values derived from loaded data, passed to the NCA trainer."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -8,13 +8,14 @@ from typing import Any
 class TrainerContext:
     """Non-serialisable values needed by a configured training run.
 
-    User choices belong in the experiment config.  This object only carries
-    values derived from loaded data or the runtime environment.
+    User choices belong in the experiment config; this only holds values
+    derived from loaded data or the runtime environment.
     """
 
     run_name: str
     model_directory: str
-    data_augmenter: type
+    # Built by the entrypoint from the loaded data (see NCA/trainer/data_augmenter)
+    data_augmenter: Any
     storage_id: str | None = None
     boundary_mask: Any = None
     channel_schema: Any = None
@@ -24,3 +25,13 @@ class TrainerContext:
     observed_channels: int | None = None
     data_channels: int | None = None
     evaluation_input: Any = None
+    validation_data: Any = None
+    validation_boundary_mask: Any = None
+    validation_loss_time_channel_mask: Any = None
+    training_intervention_times: Any = None
+    validation_intervention_times: Any = None
+    # Observation time of each target image (any unit), used by non-uniform
+    # training.loop.interval_mode settings to size each transition.
+    observation_times: tuple[float, ...] | None = None
+    # W&B tags for the run, built from the experiment config by the caller.
+    wandb_tags: tuple[str, ...] = ()

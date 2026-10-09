@@ -1,4 +1,4 @@
-"""Channel schemas declared by the modern micropattern data loaders."""
+"""Channel schemas of the micropattern datasets."""
 
 from Common.dataloader.channel_schema import (
     ChannelSchema,
@@ -267,8 +267,39 @@ MICROPATTERN_260726_SCHEMA = ChannelSchema(
 )
 
 
+# Default intensity scaling for the 260726 dataset. Each channel is clipped to
+# these percentiles (pooled over all loaded images) and rescaled to [0, 1].
+DEFAULT_260726_HISTOGRAM_PERCENTILES = (0.0, 99.5)
+# Multiplicative corrections of raw intensities per measurement name and
+# timestep (hours). Some early images are brighter than later timepoints
+# because of imaging artifacts, before cells express the marker at all;
+# values below one dim them. The corrected values also feed the percentile
+# bins. Keep in step with data.micropattern.intensity_factors in
+# Experiments/micropatterns/conf/base_config.yaml.
+DEFAULT_260726_INTENSITY_FACTORS = {
+    "cell_fate_s1/SOX17": {0: 0.3},
+    "cell_fate_s2/SOX17": {0: 0.15, 12: 0.5},
+    "cell_fate_s2/FOXA2": {0: 0.02},
+}
+# The 0h factors alone, for views that only correct 0h.
+DEFAULT_260726_INITIAL_INTENSITY_SCALES = {
+    name: by_hour[0] for name, by_hour in DEFAULT_260726_INTENSITY_FACTORS.items() if 0 in by_hour
+}
+# Image cleaning defaults (see Common/dataloader/micropattern_cleaning.py).
+# LMBR, the structural membrane stain, gets no hot pixel replacement or
+# background removal; SMAD23 gets no background removal.
+DEFAULT_260726_HOT_PIXEL_THRESHOLDS = {
+    channel.name: 0.0 if channel.marker == "LMBR" else 30.0
+    for channel in MICROPATTERN_260726_SCHEMA.measurement_channels
+}
+DEFAULT_260726_BACKGROUND_RADII = {
+    channel.name: 0 if channel.marker in ("LMBR", "SMAD23", "CER1", "LEFTY", "NODAL") else 10
+    for channel in MICROPATTERN_260726_SCHEMA.measurement_channels
+}
+
+
 def attach_channel_schema(aux, schema):
-    """Attach schema metadata without changing an established return signature."""
+    """Add ``schema`` to a loader's ``aux`` dict."""
 
     if aux is None:
         aux = {}

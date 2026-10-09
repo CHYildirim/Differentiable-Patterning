@@ -3,12 +3,14 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 --cluster {eidf|dawn} [--port PORT]"
+    echo "Usage: $0 --cluster {eidf|dawn} [--port PORT] [--no-reindex]"
     echo "  --port is required when --cluster eidf is selected."
+    echo "  --no-reindex skips rebuilding models/registry.sqlite after the copy."
 }
 
 cluster=""
 port=""
+reindex=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -21,6 +23,10 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || { usage >&2; exit 1; }
             port="$2"
             shift 2
+            ;;
+        --no-reindex)
+            reindex=false
+            shift
             ;;
         -h|--help)
             usage
@@ -49,7 +55,7 @@ case "$cluster" in
             usage >&2
             exit 1
         fi
-        rsync -r -e ssh rc-rich1@login-cpu-hpc.cam-ac.uk:/home/rc-rich1/rds/rds-airr-p100-NQDJLHPwRqs/Models/bundles/ ./models/bundles/
+        rsync -r -e ssh rc-rich1@login-dawn.hpc.cam.ac.uk:/home/rc-rich1/rds/rds-airr-p100-NQDJLHPwRqs/Models/bundles/ ./models/bundles/
         ;;
     *)
         echo "--cluster must be either 'eidf' or 'dawn'." >&2
@@ -57,3 +63,7 @@ case "$cluster" in
         exit 1
         ;;
 esac
+
+if [[ "$reindex" == true ]]; then
+    python -m Experiments.model_registry --root ./models reindex
+fi

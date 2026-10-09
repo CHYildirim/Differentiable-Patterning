@@ -1,4 +1,8 @@
-"""Recurrent training-pool admission policy."""
+"""Decide whether rollout results are written back into the training pool.
+
+A result is rejected when its loss is much higher than a running average (EMA)
+of admitted losses, or than the last admitted loss.
+"""
 
 from dataclasses import dataclass
 from typing import Sequence
@@ -25,13 +29,13 @@ class PoolDecision:
 
 
 class PoolAdmissionController:
-    def __init__(self, config, default_warmup: int):
+    def __init__(self, config):
         self.config = config
-        self.warmup = default_warmup if config.warmup is None else config.warmup
+        self.warmup = config.warmup
         self.state = PoolAdmissionState()
 
     def reset_references(self) -> None:
-        """Forget scalar comparisons after the training objective changes."""
+        """Reset the reference losses, e.g. after the loss weights change."""
         self.state.loss_ema = None
         self.state.previous_admitted_loss = None
 
@@ -106,17 +110,16 @@ class PoolAdmissionController:
 
 
 class TimePoolAdmissionController:
-    """Apply the established admission policy independently per time slot."""
+    """Apply the admission rule separately to each time slot."""
 
-    def __init__(self, config, default_warmup: int):
+    def __init__(self, config):
         self.config = config
-        self.default_warmup = default_warmup
         self.controllers: list[PoolAdmissionController] = []
 
     def _ensure_size(self, size: int) -> None:
         if not self.controllers:
             self.controllers = [
-                PoolAdmissionController(self.config, self.default_warmup)
+                PoolAdmissionController(self.config)
                 for _ in range(size)
             ]
         elif len(self.controllers) != size:

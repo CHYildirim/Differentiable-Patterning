@@ -1,26 +1,22 @@
+"""Public entry point of the NCA trainer.
+
+``NcaTrainer`` holds what is derived from the loaded data (augmenter, boundary
+callbacks, loss masks, channel counts) and the logger. ``train`` then runs:
+
+    preparation.prepare_training -> step.build_train_step -> runner.run_loop
+"""
+
 from pathlib import Path
 from dataclasses import asdict
 
-import jax
 import jax.numpy as jnp
-import jax.random as jr
 import jax.tree_util as jtu
-import equinox as eqx
 import datetime
-from NCA.trainer.logging.tensorboard import (
-	NCA_Train_log,
-	mNCA_Train_log,
-	aNCA_Train_log,
-	NCA_knockout_Train_log,
-)
-from NCA.trainer.logging.kan_tensorboard import (
-	kaNCA_Train_log,
+from NCA.trainer.logging.wandb_log import NCALogger
+from NCA.trainer.logging.kan_wandb_log import (
+	FastKANLogger,
 	uses_fast_kan_diagnostics,
 )
-from NCA.model.NCA_KAN_model import kaNCA
-from NCA.model.NCA_multi_scale import mNCA
-from NCA.model.NCA_multihead_attention import aNCA
-from NCA.trainer.training_execution import TrainingExecution
 from NCA.trainer.context import TrainerContext
 from einops import repeat, rearrange
 from Common.model.boundary import model_boundary, hard_boundary, no_boundary
@@ -32,31 +28,42 @@ def describe_batch_shapes(value):
 	return str([leaf.shape for leaf in jtu.tree_leaves(value)])
 
 
-def select_wandb_train_logger_class(model, knockout_time=None):
-	if knockout_time is not None:
-		return NCA_knockout_Train_log
+def select_wandb_train_logger_class(model):
 	if uses_fast_kan_diagnostics(model):
-		return kaNCA_Train_log
-	return NCA_Train_log
+		return FastKANLogger
+	return NCALogger
 
 class NcaTrainer:
-	"""Config-driven NCA trainer with an explicit numerical lifecycle.
+	"""Config-driven NCA trainer.
 
-	Configuration is immutable and comes from one experiment config.  Values
-	derived from loaded data live in :class:`TrainerContext` instead of being
-	exposed as a second collection of trainer options.
+	User choices come from the experiment config; the trainer keeps only the
+	sections it uses. Values derived from loaded data come in through
+	:class:`TrainerContext`.
 	"""
 
 	def __init__(self, config, model, data, context: TrainerContext):
-		self.config = config
+		self.run_config = config.run
+		self.trainer_config = config.trainer
+		self.optimiser_config = config.optimiser
+		self.loss_config = config.loss
+		self.logging_config = config.logging
+		self.knockout_config = config.data.knockout
 		self.context = context
-		trainer_config = config.training.trainer
+		trainer_config = config.trainer
 		self.model = model
-		data_augmenter = context.data_augmenter
-		channel_schema = context.channel_schema or getattr(data_augmenter, "schema", None)
+		self.data_augmenter = context.data_augmenter
+		channel_schema = context.channel_schema or getattr(self.data_augmenter, "schema", None)
 		self.channel_schema = channel_schema
 		self.channel_names = context.channel_names
 		self.timepoint_names = context.timepoint_names
+		self.intervention_times = context.training_intervention_times
+		self.nodal_channel = (
+			channel_schema.state_channels.index("NODAL")
+			if self.intervention_times is not None
+			and channel_schema is not None
+			and "NODAL" in channel_schema.state_channels
+			else None
+		)
 		boundary_mask = context.boundary_mask
 		self.diagnostic_boundary_mask = boundary_mask
 		
@@ -77,18 +84,9 @@ class NcaTrainer:
 			self.data_channels = context.data_channels
 		
 		
-		self.sharding = trainer_config.sharding
 		self.grad_loss = trainer_config.grad_loss
 		self.loss_time_channel_mask = context.loss_time_channel_mask
-		# Set up data and data augmenter class
 		self._data_raw = data
-		augmenter_kwargs = dict(
-			data_true=data,
-			hidden_channels=0 if channel_schema is not None else self.channels-self.data_channels,
-			nca_model=self.model,
-			)
-		self.data_augmenter = data_augmenter(**augmenter_kwargs)
-		self.data_augmenter.data_init(self.sharding)
 		self.data = self.data_augmenter.return_saved_data()
 		self.batch_count = len(self.data)
 		print("Batches = "+str(self.batch_count))
@@ -129,13 +127,30 @@ class NcaTrainer:
 		
 		self._log_root = trainer_config.log_directory
 		self._model_root = context.model_directory
-		# Keep human-readable names in logging metadata. Checkpoint paths use a
-		# bounded, collision-resistant storage ID supplied by the entrypoint.
+		# Logging uses the readable run name; checkpoint paths use the short
+		# unique storage ID from the entrypoint, if given.
 		self.model_filename = context.storage_id or context.run_name
-		#print(jax.tree_util.tree_structure(self.boundary_callbacks))
 		
-	def setup_logging(self,logging_backend,wandb_args,knockout,singular_value_settings=None):
-		# Set logging behvaiour based on provided filename
+	def setup_logging(self):
+		"""Create the logger chosen by logging.backend, and the checkpoint path."""
+		logging_backend = self.logging_config.backend
+		settings = self.logging_config.singular_values
+		singular_value_settings = {
+			"enabled": bool(settings.enabled),
+			"plot_spectra": bool(settings.plot_spectra),
+			"epsilon": float(settings.epsilon),
+		}
+		wandb_args = {
+			"project": self.logging_config.wandb.project,
+			"group": self.logging_config.wandb.group,
+			"tags": list(self.context.wandb_tags),
+			"name": self.context.run_name,
+		}
+		knockout = {
+			"time": self.knockout_config.time,
+			"channel": self.knockout_config.channel,
+		}
+		# Set logging behaviour based on the provided filename
 		print(f"Raw data shape(s): {describe_batch_shapes(self._data_raw)}")
 		logging_data = self.data_augmenter.return_observed_data()
 		if self.model_filename is None:
@@ -144,26 +159,6 @@ class NcaTrainer:
 		else:
 			if logging_backend == "none":
 				self.is_logging = False
-			elif logging_backend=="tensorboard":
-				self.is_logging = True
-				self.log_directory = str(
-					Path(self._log_root) / self.model_filename / "train"
-				)
-				if isinstance(self.model ,kaNCA) or uses_fast_kan_diagnostics(self.model):
-					self.logger = kaNCA_Train_log(self.log_directory,logging_data)
-				elif isinstance(self.model , mNCA):
-					self.logger = mNCA_Train_log(self.log_directory,logging_data)
-				elif isinstance(self.model , aNCA):
-					self.logger = aNCA_Train_log(self.log_directory,logging_data)
-				# elif isinstance(self.model, uNCA):
-					# self.logger = uNCA_Train_log(self.log_directory, self._data_raw)
-				else:
-					self.logger = NCA_Train_log(
-						self.log_directory,
-						logging_data,
-						singular_value_config=singular_value_settings,
-					)
-				print("Logging training to: "+self.log_directory)
 			elif logging_backend=="wandb":
 				self.is_logging = True
 				self.log_directory = str(
@@ -171,105 +166,32 @@ class NcaTrainer:
 				)
 				wandb_args["config"] = {
 					"model": self.model.get_config(),
-					"training": asdict(self.config.training),
+					"run": asdict(self.run_config),
+					"trainer": asdict(self.trainer_config),
+					"optimiser": asdict(self.optimiser_config),
+					"loss": asdict(self.loss_config),
 				}
 				
-				if knockout["time"] is not None: # Nodal KO has differet logging behaviour
-					self.logger = NCA_knockout_Train_log(
-						data=logging_data,
-						wandb_config=wandb_args,
-						boundary_mask=self.diagnostic_boundary_mask,
-						channel_names=self.channel_names,
-						channel_schema=self.channel_schema,
-						timepoint_names=self.timepoint_names,
-						data_augmenter=self.data_augmenter,
-						knockout_time=knockout["time"],
-						knockout_channel=knockout["channel"],
-						singular_value_config=singular_value_settings)
-				else:
-					logger_class = select_wandb_train_logger_class(self.model)
-					self.logger = logger_class(
-						data=logging_data,
-						wandb_config=wandb_args,
-						boundary_mask=self.diagnostic_boundary_mask,
-						channel_names=self.channel_names,
-						channel_schema=self.channel_schema,
-						timepoint_names=self.timepoint_names,
-						data_augmenter=self.data_augmenter,
-						singular_value_config=singular_value_settings,
-					)
+				logger_class = select_wandb_train_logger_class(self.model)
+				self.logger = logger_class(
+					data=logging_data,
+					wandb_config=wandb_args,
+					boundary_mask=self.diagnostic_boundary_mask,
+					channel_names=self.channel_names,
+					channel_schema=self.channel_schema,
+					timepoint_names=self.timepoint_names,
+					data_augmenter=self.data_augmenter,
+					singular_value_config=singular_value_settings,
+					# Older colony knockout runs (data.knockout.time as an image index)
+					knockout_time=knockout["time"],
+					knockout_channel=knockout["channel"] if knockout["time"] is not None else None,
+				)
 				print("Logging training to: "+self.log_directory)
 			else:
-					raise ValueError(
-					"logging.backend must be 'none', 'wandb' or 'tensorboard'"
-				)
+				raise ValueError("logging.backend must be 'none' or 'wandb'")
 		self.model_path = str(Path(self._model_root) / self.model_filename)
 		print("Saving model to: "+self.model_path)
 
-	def _make_batched_nca(self, nca):
-		"""Build the established vmap/tree-map NCA application path.
-
-		Accelerator-specific trainers may override this hook without adding
-		backend flags or batching branches to the core training loop.
-		"""
-		apply_with_boundary = jax.vmap(
-			nca, in_axes=(0, None, 0), out_axes=0, axis_name="N"
-		)
-		return lambda x, callback, key_array: jtu.tree_map(
-			apply_with_boundary, x, callback, key_array
-		)
-
-	def _training_execution(self):
-		return TrainingExecution(self)
-
-	def _run_nca_steps(
-		self,
-		nca,
-		vv_nca,
-		states,
-		reg_logs_internal,
-		t,
-		key,
-		loop_autodiff,
-		apply_intermediate_regs,
-		training_execution,
-	):
-		"""Reference one-step scan; SYCL trainers may override the rollout."""
-		state_shape = states[0].shape[0]
-
-		def nca_step(carry, j):
-			step_key, state, reg_logs = carry
-			step_key = jr.fold_in(step_key, j)
-			key_array = list(jr.randint(
-				step_key,
-				shape=(self.batch_count, state_shape, 2),
-				minval=0,
-				maxval=2_147_483_647,
-				dtype=jnp.uint32,
-			))
-			new_state = vv_nca(
-				state, training_execution.boundary_callbacks(), key_array
-			)
-			reg_logs = apply_intermediate_regs(
-				reg_logs,
-				state,
-				new_state,
-				{
-					"model": vv_nca,
-					"boundary_state_selector": nca.boundary_regulariser_state,
-				},
-				step_key,
-			)
-			return (step_key, new_state, reg_logs), None
-
-		carry, _ = eqx.internal.scan(
-			nca_step,
-			(key, states, reg_logs_internal),
-			xs=jnp.arange(t),
-			kind=loop_autodiff,
-		)
-		return carry
-	
 	def train(
 		self,
 		*,
@@ -280,8 +202,9 @@ class NcaTrainer:
 	):
 		"""Prepare, compile and execute one configured training run."""
 		from NCA.trainer.preparation import prepare_training
-		from NCA.trainer.runner import run_training
+		from NCA.trainer.runner import run_loop
 		from NCA.trainer.step import build_train_step
+		from NCA.trainer.validation import build_validation_evaluator
 
 		setup = prepare_training(
 			self,
@@ -289,30 +212,20 @@ class NcaTrainer:
 			timesteps=timesteps,
 			loss_overrides=loss_overrides,
 		)
+		self.setup_logging()
 		step = build_train_step(self, setup)
-		return run_training(
+		validation_evaluator = build_validation_evaluator(self, setup)
+		return run_loop(
 			self,
 			setup,
 			step,
 			progress_callback=progress_callback,
+			validation_evaluator=validation_evaluator,
 		)
 
 
 def build_trainer(config, model, data, context: TrainerContext) -> NcaTrainer:
-	"""Construct the trainer selected by the typed backend configuration."""
-	backend_type = config.training.trainer.backend.type
-	is_sycl_model = config.model.family in {"NCA_sycl", "gNCA_sycl"}
-	if (backend_type == "sycl") != is_sycl_model:
-		raise ValueError(
-			"model.family in {'NCA_sycl', 'gNCA_sycl'} and trainer.backend.type='sycl' "
-			"must be selected together"
-		)
-	if backend_type == "sycl":
-		from NCA.trainer.backend.sycl.trainer import SyclNcaTrainer
-
-		return SyclNcaTrainer(config, model, data, context)
-	if backend_type not in {"none", "nvidia"}:
-		raise ValueError(f"Unsupported trainer backend {backend_type!r}")
+	"""Construct an NCA trainer from an experiment config."""
 	return NcaTrainer(config, model, data, context)
 
 

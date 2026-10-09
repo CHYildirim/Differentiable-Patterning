@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 7
 seed: 0
 
 experiment:
@@ -18,6 +18,10 @@ data:
   downsample: 1
   micropattern:
     pool_copies: 1
+  # Physical replicate IDs are one-based. Null training IDs retain the
+  # historical first-data.batches behavior; null validation disables it.
+    train_replicates: null
+    validation_replicates: null
   # Null loads all experiment groups for the selected dataset.
     experiment_groups: null
     timesteps: [0, 12, 24, 36, 48]
@@ -33,7 +37,78 @@ data:
     intermediate_reinjection_probability: 0.5
     intermediate_reinjection_probability_end: 0.5
     intermediate_reinjection_decay_start_fraction: 0.25
+  # 260726 only. Each channel is clipped to these percentiles, taken over
+  # all timesteps of a trajectory, then rescaled to [0, 1]. Per-channel
+  # values can be set in cleaning.channel_percentiles.
+    histogram_percentiles: [0.0, 99.5]
+  # 260726 only. Factors multiplying the raw intensities of a channel at a
+  # timestep (hours), for every condition, to correct imaging artifacts.
+    intensity_factors:
+      cell_fate_s1/SOX17:
+        0: 0.3
+      cell_fate_s2/SOX17:
+        0: 0.15
+        12: 0.5
+      cell_fate_s2/FOXA2:
+        0: 0.02
+  # 260726 only. Image cleaning, as tuned in
+  # Experiments/micropatterns/data_cleaning.py; see
+  # Common/dataloader/micropattern_cleaning.py for the steps.
+    cleaning:
+      enabled: true
+      hot_pixel_window: 5
+      hot_pixel_thresholds:
+        cell_fate_s1/SOX17: 30.0
+        cell_fate_s1/SOX2: 30.0
+        cell_fate_s1/TBXT: 30.0
+        cell_fate_s1/LMBR: 0.0
+        cell_fate_s2/SOX17: 30.0
+        cell_fate_s2/FOXA2: 30.0
+        cell_fate_s2/TBXT: 30.0
+        cell_fate_s2/LMBR: 0.0
+        rna_expression/CER1: 30.0
+        rna_expression/LEFTY: 30.0
+        rna_expression/NODAL: 30.0
+        protein_response/LEF1: 30.0
+        protein_response/LMBR: 0.0
+        protein_response/SMAD23: 30.0
+      background_shrink: 4
+      background_radii:
+        cell_fate_s1/SOX17: 10
+        cell_fate_s1/SOX2: 10
+        cell_fate_s1/TBXT: 10
+        cell_fate_s1/LMBR: 0
+        cell_fate_s2/SOX17: 10
+        cell_fate_s2/FOXA2: 10
+        cell_fate_s2/TBXT: 10
+        cell_fate_s2/LMBR: 0
+        rna_expression/CER1: 0
+        rna_expression/LEFTY: 0
+        rna_expression/NODAL: 0
+        protein_response/LEF1: 10
+        protein_response/LMBR: 0
+        protein_response/SMAD23: 0
+    # Colony centres exported from the data cleaning notebook (relative to
+    # the repository root), and the mask radius as a fraction of the
+    # pattern radius.
+      alignment_file: Experiments/micropatterns/conf/alignment/260726_alignment.yaml
+      mask_radius_scale: 1.0
+    # replicate_mean, per_replicate or pooled (see
+    # Common/dataloader/normalisation.py).
+      normalisation: per_replicate
+      channel_percentiles: {}
+      percentiles_inside_mask: true
+      knockouts_use_control_bounds: false
+  # 260726 only. Images flagged as low quality in the data cleaning notebook
+  # (relative to the repository root); each is treated as not measured.
+    quality_flags_file: Experiments/micropatterns/conf/quality/260726_quality_flags.yaml
     duplicate_final_timestep: false
+  # Nodal knockout settings; they choose which knockout data is loaded.
+  knockout:
+    mode: null
+    time: null
+    channel: Nodal
+    curriculum: null
 
 model:
   family: NCA
@@ -45,19 +120,21 @@ model:
 trainer:
   boundary_mode: soft
   grad_loss: false
-  sharding: null
-  backend:
-    type: none
   log_directory: logs/
   loss_time_channel_mask: null
   loop_autodiff: checkpointed
   log_every: 100
-  pool_admission_enabled: true
-  pool_admission_relative_threshold: 1.25
-  pool_admission_previous_relative_threshold: 1.10
-  pool_admission_absolute_threshold: null
-  pool_admission_ema_decay: 0.95
-  pool_admission_warmup: null
+  validation_every: null
+  validation_rollout: false
+  # Which rollouts are written back into the training pool.
+  pool_admission:
+    enabled: true
+    relative_threshold: 1.25
+    previous_relative_threshold: 1.10
+    absolute_threshold: null
+    ema_decay: 0.95
+    # null means the same as run.checkpoint_warmup.
+    warmup: null
 
 optimiser:
   type: nadam
@@ -94,8 +171,10 @@ run:
   mode: train
   t: 32
   iterations: 2000
-  warmup: 64
+  # The best checkpoint is only saved after this many iterations.
+  checkpoint_warmup: 64
   write_images: true
+  write_videos: true
 
 logging:
   backend: wandb
@@ -107,6 +186,9 @@ logging:
     project: NCA-micropattern
     group: base-config
     tags: null
+    # Settings whose values become automatic tags. Generated sweeps set this
+    # to the settings their runs differ in; null tags every setting.
+    tag_keys: null
 
 # Publish the best checkpoint with this resolved config and provenance. The
 # SQLite catalogue is rebuilt separately, so concurrent jobs never share it.
@@ -114,9 +196,8 @@ model_store:
   enabled: true
   root: models
   collection: ${logging.wandb.project}
-  model_factory: Experiments.config_helpers:build_model
+  model_factory: NCA.model.factory:build_model
 
-knockout:
-  mode: null
-  time: null
-  channel: Nodal
+initialization:
+  model_id: null
+

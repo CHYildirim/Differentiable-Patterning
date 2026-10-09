@@ -1,4 +1,4 @@
-experiment_name: hnca_micropattern_hyperparameter_sweep_v7
+experiment_name: hnca_micropattern_hyperparameter_sweep_v8
 entrypoint: Experiments.micropatterns.train:run
 output_subdir: generated/hnca_micropattern_hyperparameter_sweep
 seed_mode: index
@@ -20,12 +20,12 @@ grid:
   model.parent_gated: [false, true]
   model.actuator_gated: [false, true]
 
-  run.iterations: [8000]
+  run.iterations: [12000]
   run.repeat: [0]
   run.t: [128]
 
   trainer.loop_autodiff: [lax]
-  trainer.pool_admission_previous_relative_threshold: [1.0]
+  trainer.pool_admission.previous_relative_threshold: [1.0]
   trainer.log_every: [200]
 
   logging.wandb.project: [hnca_micropatterns]
@@ -33,7 +33,6 @@ grid:
   logging.singular_values.plot_spectra: [true]
   logging.singular_values.epsilon: [1e-8]
 
-  # Fixed radial-VGG objective: no loss-weight schedules are configured.
   loss.terms: [multi_target]
   loss.terms.0.multi_target_weights.l2: [0.0,1.0]
   loss.terms.0.multi_target_weights.texture: [1.0]
@@ -49,8 +48,6 @@ grid:
   loss.regularisers.update_sensitivity: [0.0]
   loss.regularisers.perturbation_conservation: [0.0]
   loss.regularisers.localised_hidden: [0.0]
-  # Intermediate-state regularisation still sees the packed parent state and
-  # remains disabled. Boundary regularisation uses HNCA's child-only view.
   loss.regularisers.intermediate_state: [10.0]
   loss.regularisers.boundary: [10.0]
 
@@ -62,11 +59,11 @@ grid:
   data.micropattern.intermediate_reinjection_probability_end: [0.0]
   data.micropattern.intermediate_reinjection_decay_start_fraction: [0.01]
   data.dataset: [micropatterns_260726]
-  data.micropattern.duplicate_final_timestep: [true,false]
+  data.micropattern.duplicate_final_timestep: [false]
 
-  knockout.mode: [null]
-  knockout.time: [null]
-  knockout.channel: [Nodal]
+  data.knockout.mode: [null]
+  data.knockout.time: [null]
+  data.knockout.channel: [Nodal]
 
   optimiser.type: [nadam]
   optimiser.learn_rate: [1e-3]
@@ -84,6 +81,47 @@ grid:
   data.micropattern.experiment_groups: [cell_fate_s1]
   
 groups:
+
+  - loss.schedule_label:
+      [static, cos_macro, cos_reverse]
+    loss.terms.0.multi_target_schedules.l2.type:
+      [constant, cosine, cosine]
+    loss.terms.0.multi_target_schedules.l2.initial_factor:
+      [1.0, 1.0, 0.05]
+    loss.terms.0.multi_target_schedules.l2.final_factor:
+      [1.0, 0.25, 1.0]
+    loss.terms.0.multi_target_schedules.l2.start_fraction:
+      [0.0, 0.30, 0.30]
+    loss.terms.0.multi_target_schedules.l2.end_fraction:
+      [1.0, 0.75, 0.75]
+    loss.terms.0.multi_target_schedules.l2.stages:
+      [null, 8, 8]
+
+    loss.terms.0.multi_target_schedules.texture.type:
+      [constant, cosine, cosine]
+    loss.terms.0.multi_target_schedules.texture.initial_factor:
+      [1.0, 0.05, 1.0]
+    loss.terms.0.multi_target_schedules.texture.final_factor:
+      [1.0, 1.0, 0.25]
+    loss.terms.0.multi_target_schedules.texture.start_fraction:
+      [0.0, 0.30, 0.30]
+    loss.terms.0.multi_target_schedules.texture.end_fraction:
+      [1.0, 0.75, 0.75]
+    loss.terms.0.multi_target_schedules.texture.stages:
+      [null, 8, 8]
+
+    loss.terms.0.multi_target_schedules.radial.type:
+      [constant, cosine, cosine]
+    loss.terms.0.multi_target_schedules.radial.initial_factor:
+      [1.0, 1.0, 0.05]
+    loss.terms.0.multi_target_schedules.radial.final_factor:
+      [1.0, 0.25, 1.0]
+    loss.terms.0.multi_target_schedules.radial.start_fraction:
+      [0.0, 0.30, 0.30]
+    loss.terms.0.multi_target_schedules.radial.end_fraction:
+      [1.0, 0.75, 0.75]
+    loss.terms.0.multi_target_schedules.radial.stages:
+      [null, 8, 8]
   # Keep the model's protected fine channels aligned with the measurements.
   # - data.micropattern.data_channels: [4, 8]
   #   model.obs_channels: [4, 8]

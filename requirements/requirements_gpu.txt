@@ -19,6 +19,7 @@ matplotlib
 ipykernel
 ipywidgets
 ffmpeg-python
+imageio-ffmpeg
 nbformat
 flax
 orbax-checkpoint
@@ -29,5 +30,4 @@ pyparsing
 PyYAML
 pytest
 marimo
-omegaconf
-python-dotenv
+anywidget

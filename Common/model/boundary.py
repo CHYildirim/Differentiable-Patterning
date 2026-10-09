@@ -6,7 +6,7 @@ from jaxtyping import Array, Float, Int, Key, Scalar
 
 class model_boundary(object):
 	"""
-		Callable object that forces intermediate NCA states to be fixed to boundary condition at specified channels
+		Overwrite the last channels of an NCA state with a fixed mask (boundary condition)
 	"""
 	
 	
@@ -16,10 +16,6 @@ class model_boundary(object):
 		----------
 		mask : float32 [MASK_CHANNELS,WIDTH,HEIGHT]
 			array encoding structure or boundary conditions for NCA intermediate states
-		Returns
-		-------
-		None.
-
 		"""
 		assert len(mask.shape) == 3, "Mask should be of shape [MASK_CHANNELS,WIDTH,HEIGHT]"
 		self.MASK = mask
@@ -35,7 +31,7 @@ class model_boundary(object):
 
 class no_boundary(object):
 	"""
-		Callable object that does not enforce any boundary conditions on intermediate NCA states
+		No boundary condition: returns the state unchanged
 	"""
 	def __init__(self):
 		return None
@@ -49,11 +45,7 @@ class hard_boundary(object):
 		Parameters
 		----------
 		mask : float32 [1,WIDTH,HEIGHT]
-			array encoding structure or boundary conditions for NCA intermediate states
-		Returns
-		-------
-		None.
-
+			multiplies every channel of the NCA state
 		"""
 		self.MASK = rearrange(mask,"() H W -> H W")
 	
@@ -64,41 +56,3 @@ class hard_boundary(object):
 		
 		x_masked = einsum(x,self.MASK,'... C H W, H W -> ... C H W')
 		return x_masked
-	
-
-
-
-class trainable_boundary(eqx.Module):
-	""" 
-		Callable object that forces intermediate NCA states to be fixed to boundary condition at specified channels.
-		Mask is trainable.
-	"""
-	mask: Array
-	limit_function: callable
-	m_channels: Int
-	def __init__(self,mask = None,limit_function = jax.nn.sigmoid):
-		"""
-		Parameters
-		----------
-		mask : float32 [MASK_CHANNELS,WIDTH,HEIGHT]
-			array encoding structure or boundary conditions for NCA intermediate states
-		limit_function : callable, optional
-			function that constrains mask values. The default is jax.nn.sigmoid.		
-		Returns
-		-------
-		None.
-
-		"""
-		self.mask = mask
-		self.limit_function = limit_function# Force mask to be constrained between 0 and 1
-		self.m_channels = mask.shape[0]
-
-	def __call__(self,x):
-		x_masked = x.at[-self.m_channels:].set(self.limit_function(self.mask))
-		return x_masked	
-
-	def coverage(self):
-		return jnp.sum(self.limit_function(self.mask))
-	
-	def get_mask(self):
-		return self.limit_function(self.mask)

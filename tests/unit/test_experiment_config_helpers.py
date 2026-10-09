@@ -1,27 +1,38 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
-from Common.dataloader.preprocessing import PreprocessingConfig, ProcessingStep
-from Common.trainer.config import MultiTargetLossConfig
+from types import SimpleNamespace
+
+from Common.trainer.config import (
+    LossConfig,
+    MultiTargetLossConfig,
+    OptimiserConfig,
+    PointwiseLossConfig,
+)
+from Experiments.config import DataConfig, RunConfig
+from Experiments.emoji.config import EmojiDataConfig, EmojiPairConfig, ProbabilityScheduleConfig
+from Experiments.micropatterns.config import KnockoutConfig, MicropatternDataConfig
 from Experiments.config_helpers import (
-    build_model,
-    build_model_config_string,
+    build_registry_tags,
     build_tags,
     build_wandb_tags,
+    load_model_registry_list,
 )
 from Experiments.emoji.config_helpers import (
     build_data_augmenter,
+    build_hidden_seeds,
     build_data_config_string,
     build_filename,
     load_data as load_emoji_data,
 )
-from NCA.model.NCA_fast_KAN_model import FastKaNCA
-from NCA.model.NCA_model import NCA
-from NCA.model.NCA_model_fast import NCA as FastNCA
-from NCA.model.NCA_sycl import NCA as SyclNCA
-from NCA.trainer.data_augmenter.colony_4ch import DataAugmenter as DataAugmenter4Ch
-from NCA.trainer.data_augmenter.colony_9ch import DataAugmenter as DataAugmenterGrouped
+from Common.dataloader.micropattern_schemas import (
+    MICROPATTERN_4CH_SCHEMA,
+    MICROPATTERN_GROUPED_12CH_SCHEMA,
+)
+from NCA.trainer.data_augmenter.emoji import EmojiAugmenter
+from NCA.trainer.data_augmenter.micropattern import MicropatternAugmenter, masked_reinject
 
 
 class ConfigDict(dict):
@@ -35,110 +46,73 @@ class ConfigDict(dict):
         self[key] = value
 
 
+def test_load_model_registry_list_preserves_export_order(tmp_path, monkeypatch):
+    pytest.importorskip("omegaconf")
+    export_path = tmp_path / "comparison.yaml"
+    export_path.write_text(
+        "schema_version: 1\n"
+        "model_count: 2\n"
+        "models:\n"
+        "- model_id: model-b\n"
+        "  display_name: second\n"
+        "- model_id: model-a\n"
+        "  display_name: first\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    class _Bundle:
+        def __init__(self, model_id):
+            self.model_id = model_id
+
+        def load_model(self, key=None, implementation="recorded"):
+            calls.append((self.model_id, key, implementation))
+            return f"loaded:{self.model_id}"
+
+    class _Registry:
+        def __init__(self, root):
+            assert root == tmp_path / "store"
+
+        def get(self, model_id):
+            return _Bundle(model_id)
+
+    monkeypatch.setattr("Experiments.model_registry.ModelRegistry", _Registry)
+
+    models = load_model_registry_list(
+        export_path,
+        store_root=tmp_path / "store",
+        key="key",
+        implementation="portable",
+    )
+
+    assert models == ["loaded:model-b", "loaded:model-a"]
+    assert calls == [
+        ("model-b", "key", "portable"),
+        ("model-a", "key", "portable"),
+    ]
+
+
+def test_load_model_registry_list_validates_declared_count(tmp_path):
+    pytest.importorskip("omegaconf")
+    export_path = tmp_path / "comparison.yaml"
+    export_path.write_text(
+        "schema_version: 1\n"
+        "model_count: 2\n"
+        "models:\n"
+        "- model_id: only-model\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="declares 2 models but contains 1"):
+        load_model_registry_list(export_path, store_root=tmp_path / "store")
+
+
 def _cfg(value):
     if isinstance(value, dict):
         return ConfigDict({key: _cfg(item) for key, item in value.items()})
     if isinstance(value, list):
         return [_cfg(item) for item in value]
     return value
-
-
-def _base_cfg(family):
-    return _cfg(
-        {
-            "data": {"dataset": "emojis", "emoji": {"data_channels": 4}},
-            "model": {
-                "family": family,
-                "channels": 4,
-                "kernel_str": ["ID", "LAP"],
-                "fire_rate": 1.0,
-                "padding": "CIRCULAR",
-            },
-        }
-    )
-
-
-def test_build_model_constructs_nca():
-    cfg = _base_cfg("NCA")
-    model, cfg_str = build_model(cfg.model, key=jax.random.PRNGKey(0))
-
-    assert isinstance(model, NCA)
-    assert cfg_str.startswith("NCA")
-
-
-def test_build_model_constructs_fast_nca_and_marks_filename():
-    cfg = _base_cfg("NCA_fast")
-    model, cfg_str = build_model(cfg.model, key=jax.random.PRNGKey(0))
-
-    assert isinstance(model, FastNCA)
-    assert cfg_str.startswith("NCA_fast_c4")
-
-
-def test_build_model_constructs_sycl_nca_and_marks_filename():
-    cfg = _base_cfg("NCA_sycl")
-    model, cfg_str = build_model(cfg.model, key=jax.random.PRNGKey(0))
-
-    assert isinstance(model, SyclNCA)
-    assert cfg_str.startswith("NCA_sycl_c4")
-
-
-def test_build_model_constructs_fast_kan_nca_with_defaults():
-    cfg = _base_cfg("FastKaNCA")
-    model, cfg_str = build_model(cfg.model, key=jax.random.PRNGKey(1))
-    x = jnp.ones((4, 6, 7))
-    y = model(x, key=jax.random.PRNGKey(2))
-
-    assert isinstance(model, FastKaNCA)
-    assert y.shape == x.shape
-    assert jnp.allclose(y, x)
-    assert model.get_config()["KAN_AUX"]["base_activation"] == "identity"
-    assert "FastKaNCA" in cfg_str
-
-
-def test_build_model_constructs_fast_kan_nca_with_kan_overrides():
-    cfg = _base_cfg("FastKaNCA")
-    cfg.model.kan = {
-        "basis": "linear_spline",
-        "hidden_features": 6,
-        "num_basis": 4,
-        "base_activation": "none",
-        "extrapolation": "linear",
-        "use_layernorm": False,
-    }
-    model, _ = build_model(cfg.model, key=jax.random.PRNGKey(3))
-
-    assert model.KAN_AUX["basis"] == "linear_spline"
-    assert model.KAN_AUX["hidden_features"] == 6
-    assert model.KAN_AUX["num_basis"] == 4
-    assert model.KAN_AUX["base_activation"] == "none"
-    assert model.KAN_AUX["extrapolation"] == "linear"
-    assert model.KAN_AUX["use_layernorm"] is False
-    assert model.get_config()["KAN_AUX"]["basis"] == "linear_spline"
-    assert model.get_config()["KAN_AUX"]["extrapolation"] == "linear"
-
-
-def test_build_model_config_string_handles_missing_kan_section():
-    cfg = _base_cfg("FastKaNCA")
-    cfg_str = build_model_config_string(cfg.model)
-
-    assert "kb8" in cfg_str
-    assert "pad" not in cfg_str
-    assert "kbaseidentity" not in cfg_str
-
-
-def test_build_model_config_string_marks_linear_spline_kan():
-    cfg = _base_cfg("FastKaNCA")
-    cfg.model.kan = {
-        "basis": "linear_spline",
-        "num_basis": 12,
-        "extrapolation": "zero",
-    }
-
-    cfg_str = build_model_config_string(cfg.model)
-
-    assert "kb12" in cfg_str
-    assert "klin" in cfg_str
-    assert "kexzero" in cfg_str
 
 
 def test_build_tags_truncates_long_values_for_wandb():
@@ -158,6 +132,21 @@ def test_build_tags_truncates_long_values_for_wandb():
 
     assert all(1 <= len(tag) <= 64 for tag in tags)
     assert "data.emoji.sequence:al_mi_ve" in tags
+
+
+def test_build_registry_tags_preserves_long_values():
+    experiment_groups = [
+        "cell_fate_s1", "cell_fate_s2", "cell_fate_s3", "cell_fate_s4"
+    ]
+    cfg = _cfg({"data": {"micropattern": {"experiment_groups": experiment_groups}}})
+
+    tags = build_registry_tags(cfg)
+
+    assert (
+        "data.micropattern.experiment_groups:cell_fate_s1-cell_fate_s2-"
+        "cell_fate_s3-cell_fate_s4"
+    ) in tags
+    assert not any("~" in tag for tag in tags)
 
 
 def test_build_tags_uses_emoji_sequence_alias():
@@ -204,7 +193,7 @@ def test_build_wandb_tags_combines_automatic_and_explicit_tags():
     cfg = _cfg(
         {
             "model": {"family": "NCA", "channels": 8},
-            "training": {"loop": {"iterations": 1000}},
+            "run": {"iterations": 1000},
             "logging": {
                 "wandb": {
                     "project": "NCA-test",
@@ -219,18 +208,77 @@ def test_build_wandb_tags_combines_automatic_and_explicit_tags():
 
     assert "model.family:NCA" in tags
     assert "model.channels:8" in tags
-    assert "training.loop.iterations:1000" in tags
+    assert "run.iterations:1000" in tags
     assert "paper" in tags
     assert tags.count("model.family:NCA") == 1
 
 
-def test_build_tags_recurses_into_typed_preprocessing_config():
+def test_build_wandb_tags_keeps_only_tag_keys():
     cfg = _cfg(
         {
-            "data": {
-                "preprocessing": PreprocessingConfig(
-                    steps=(ProcessingStep.DOWNSAMPLE,),
-                    downsample=8,
+            "model": {"family": "NCA", "channels": 8},
+            "run": {"iterations": 1000},
+            "loss": {"terms": [{"type": "multi_target", "multi_target_weights": {"l2": 1.0, "texture": 0.5}}]},
+            "data": {"micropattern": {"cleaning": {"background_radii": {"a": 50, "b": 0}}}},
+            "logging": {
+                "wandb": {
+                    "project": "NCA-test",
+                    "group": "comparison",
+                    "tags": ["paper"],
+                    "tag_keys": [
+                        "model.channels",
+                        "loss.terms.0.multi_target_weights.l2",
+                        "data.micropattern.cleaning.background_radii",
+                    ],
+                }
+            },
+        }
+    )
+
+    tags = build_wandb_tags(cfg)
+
+    # A key covers everything below it; aliases still apply.
+    assert sorted(tags) == sorted(
+        [
+            "model.channels:8",
+            "loss_weight.l2:1.0",
+            "data.micropattern.cleaning.background_radii.a:50",
+            "data.micropattern.cleaning.background_radii.b:0",
+            "paper",
+        ]
+    )
+
+
+def test_build_wandb_tags_with_empty_tag_keys_keeps_only_explicit_tags():
+    cfg = _cfg(
+        {
+            "model": {"family": "NCA"},
+            "logging": {"wandb": {"project": "p", "group": "g", "tags": ["paper"], "tag_keys": []}},
+        }
+    )
+
+    assert build_wandb_tags(cfg) == ["paper"]
+
+
+def test_build_tags_recurses_into_typed_config():
+    cfg = _cfg({"run": RunConfig(t=16, iterations=100)})
+
+    tags = build_tags(cfg)
+
+    assert "run.t:16" in tags
+    assert "run.iterations:100" in tags
+    assert not any(tag.startswith("run:RunConfig") for tag in tags)
+
+
+def test_build_tags_recurses_into_config_collections():
+    cfg = _cfg(
+        {
+            "loss": {
+                "terms": (
+                    MultiTargetLossConfig(
+                        type="multi_target",
+                        assignment="hard",
+                    ),
                 )
             }
         }
@@ -238,100 +286,80 @@ def test_build_tags_recurses_into_typed_preprocessing_config():
 
     tags = build_tags(cfg)
 
-    assert "data.preprocessing.steps:downsample" in tags
-    assert "data.preprocessing.downsample:8" in tags
+    assert "loss.terms.0.type:multi_target" in tags
+    assert "loss.terms.0.assignment:hard" in tags
     assert not any(
-        tag.startswith("data.preprocessing:PreprocessingConfig") for tag in tags
+        tag.startswith("loss.terms:MultiTargetLossConfig") for tag in tags
     )
 
 
-def test_build_tags_recurses_into_config_collections():
+def test_build_tags_aliases_multi_target_schedule_paths_before_truncation():
     cfg = _cfg(
         {
-            "training": {
-                "loss": {
-                    "terms": (
-                        MultiTargetLossConfig(
-                            type="multi_target",
-                            assignment="hard",
-                        ),
-                    )
-                }
+            "loss": {
+                "terms": ({
+                    "type": "multi_target",
+                    "multi_target_schedules": {
+                        "correlation": {
+                            "initial_factor": 1.0,
+                            "final_factor": 0.25,
+                        }
+                    },
+                },)
             }
         }
     )
 
     tags = build_tags(cfg)
 
-    assert "training.loss.terms.0.type:multi_target" in tags
-    assert "training.loss.terms.0.assignment:hard" in tags
-    assert not any(
-        tag.startswith("training.loss.terms:MultiTargetLossConfig") for tag in tags
-    )
+    assert "loss_schedule.correlation.initial_factor:1.0" in tags
+    assert "loss_schedule.correlation.final_factor:0.25" in tags
+    assert not any("multi_target_schedules.correlatio~" in tag for tag in tags)
 
 
 def test_emoji_filename_uses_short_sequence_and_omits_runtime_noise():
-    cfg = _cfg(
-        {
-            "data": {
-                "batches": 2,
-                "downsample": 1,
-                "emoji": {
-                "data_channels": 4,
-                "sequence": [
-                    "avocado.png",
-                    "mushroom.png",
-                    "lizard.png",
-                    "lizard.png",
-                ],
-                "pad": [10, 10, 10, 10],
-                "regenerate": True,
-                "shift_amount": 10,
-                "noise_strength": 0.005,
-                },
+    cfg = SimpleNamespace(
+        data=DataConfig(
+            dataset="emojis",
+            batches=2,
+            downsample=1,
+            emoji=EmojiDataConfig(
+                sequence=("avocado.png", "mushroom.png", "lizard.png", "lizard.png"),
+                pad=(10, 10, 10, 10),
+                shift_amount=10,
+                noise_strength=0.005,
+                regeneration=ProbabilityScheduleConfig(
+                    enabled=True, initial_probability=1.0, final_probability=1.0
+                ),
+            ),
+        ),
+        model=SimpleNamespace(channels=12, fire_rate=0.5),
+        loss=LossConfig(
+            terms=(PointwiseLossConfig(type="l2"),),
+            regularisers={
+                "intermediate_state": 0.0,
+                "boundary": 0.0,
+                "contiguous_growth": 0.0,
+                "update_sensitivity": 0.0,
+                "perturbation_conservation": 0.0,
             },
-            "model": {
-                "family": "FastKaNCA",
-                "channels": 12,
-                "kernel_str": ["ID", "LAP", "GRAD"],
-                "fire_rate": 0.5,
-                "padding": "REPLICATE",
-                "activation": "relu",
-                "kan": {
-                    "num_basis": 16,
-                    "hidden_features": None,
-                    "base_activation": "identity",
-                    "use_layernorm": True,
-                    "final_zero_init": True,
-                },
-            },
-            "loss": {
-                "terms": [{"type": "l2", "layer": "decoded"}],
-                "regularisers": {
-                    "intermediate_state": 0.0,
-                    "boundary": 0.0,
-                    "contiguous_growth": 0.0,
-                    "update_sensitivity": 0.0,
-                    "perturbation_conservation": 0.0,
-                },
-            },
-            "run": {"filename_mode": "hydra", "t": 64, "iterations": 1000},
-            "optimiser": {"learn_rate": 0.0003, "decay_rate": 0.99},
-        }
+        ),
+        run=RunConfig(t=64, iterations=1000),
+        optimiser=OptimiserConfig(learn_rate=0.0003, decay_rate=0.99),
     )
     data_cfg_str = build_data_config_string(cfg.data)
-    data_augmenter, data_augmenter_cfg_str = build_data_augmenter(cfg.data)
+    data = jnp.zeros((1, 3, 4, 8, 8))
+    data_augmenter, data_augmenter_cfg_str = build_data_augmenter(cfg.data, data, 12)
     filename = build_filename(
         cfg,
-        build_model_config_string(cfg.model),
+        "FastKaNCA_c12_kb16",
         data_cfg_str,
         data_augmenter_cfg_str,
     )
 
-    assert data_augmenter is not None
+    assert isinstance(data_augmenter, EmojiAugmenter)
     assert "data_av_mu_li" in filename
     assert "avocado" not in filename
-    assert "layersdecoded" not in filename
     assert "pad" not in filename
     assert "shift" not in filename
     assert "noise" not in filename
@@ -340,20 +368,18 @@ def test_emoji_filename_uses_short_sequence_and_omits_runtime_noise():
 
 
 def _multi_attractor_cfg(pairs, target_repeats=2):
-    return _cfg(
-        {
-            "data": {
-                "emoji": {
-                    "task": "multi_attractor",
-                    "pairs": pairs,
-                    "target_repeats": target_repeats,
-                    "crop_square": False,
-                    "regenerate": False,
-                },
-                "batches": 2,
-                "downsample": 1,
-            }
-        }
+    return SimpleNamespace(
+        data=DataConfig(
+            dataset="emojis",
+            batches=2,
+            downsample=1,
+            emoji=EmojiDataConfig(
+                task="multi_attractor",
+                pairs=tuple(EmojiPairConfig(**pair) for pair in pairs),
+                target_repeats=target_repeats,
+                regeneration=ProbabilityScheduleConfig(enabled=False),
+            ),
+        )
     )
 
 
@@ -405,6 +431,60 @@ def test_multi_attractor_patch_initial_condition(monkeypatch):
     assert data[0, 1].sum() == 4 * 8 * 8
 
 
+def _pixel_seed_cfg(monkeypatch):
+    monkeypatch.setattr(
+        "Experiments.emoji.config_helpers.load_emoji_sequence",
+        lambda sequence, **kwargs: jnp.ones((1, 1, 4, 5, 5)),
+    )
+    return _multi_attractor_cfg(
+        [
+            # Data channels 0 and 2, hidden channel 5 (model channel 5 = hidden 1)
+            {
+                "initial": {"image": "crab.png", "mode": "pixel", "channels": [0, 2, 5], "values": [1.0, 0.5, 2.0]},
+                "target": "crab.png",
+            },
+            # Older single-channel form
+            {"initial": {"image": "microbe.png", "mode": "pixel", "channel": 1}, "target": "microbe.png"},
+        ],
+        target_repeats=1,
+    )
+
+
+def test_pixel_seeds_set_data_channels_and_hidden_channels(monkeypatch):
+    cfg = _pixel_seed_cfg(monkeypatch)
+
+    data, _ = load_emoji_data(cfg.data, impath="/tmp/emojis/")
+    hidden = build_hidden_seeds(cfg.data, data, model_channels=8)
+
+    assert data[0, 0, :, 2, 2].tolist() == [1.0, 0.0, 0.5, 0.0]
+    assert data[0, 0].sum() == 1.5
+    assert data[1, 0, :, 2, 2].tolist() == [0.0, 1.0, 0.0, 0.0]
+    assert hidden.shape == (2, 4, 5, 5)
+    assert hidden[0, 1, 2, 2] == 2.0
+    assert hidden.sum() == 2.0
+    with pytest.raises(ValueError, match="model has 5 channels"):
+        build_hidden_seeds(cfg.data, data, model_channels=5)
+
+
+def test_hidden_pixel_seeds_reach_the_augmenter_and_survive_reinjection(monkeypatch):
+    cfg = _pixel_seed_cfg(monkeypatch)
+    data, _ = load_emoji_data(cfg.data, impath="/tmp/emojis/")
+
+    augmenter, _ = build_data_augmenter(cfg.data, data, model_channels=8)
+    x, _ = augmenter.initialize_pool(jax.random.PRNGKey(0))
+    x, _ = augmenter.advance_pool(x, x, 1, jax.random.PRNGKey(1))
+
+    # batches=2 repeats the two pairs; emoji.pad (default 10) moves the centre to 12
+    saved = augmenter.return_saved_data()
+    assert len(saved) == len(x) == 4
+    for index in (0, 2):
+        assert saved[index][0, 5, 12, 12] == 2.0
+        assert saved[index][0, 5].sum() == 2.0
+        # The pool may be shifted and noised, but slot 0 keeps the seed
+        assert x[index][0, 5].max() > 1.9
+    assert saved[1][0, 4:].sum() == 0.0
+
+
 def test_multi_attractor_requires_pairs():
     cfg = _multi_attractor_cfg([])
 
@@ -412,29 +492,33 @@ def test_multi_attractor_requires_pairs():
         load_emoji_data(cfg.data, impath="/tmp/emojis/")
 
 
-def _micropattern_cfg(data_channels=12, knockout_mode=None, pool_copies=1):
-    cfg = _cfg(
-        {
-            "data": {
-                "dataset": "micropatterns",
-                "batches": 2,
-                "downsample": 1,
-                "micropattern": {
-                    "data_channels": data_channels,
-                    "timesteps": [0, 12, 24, 36, 48],
-                    "noise_strength": 0.005,
-                    "pool_copies": pool_copies,
-                },
-            },
-            "knockout": {
-                "mode": knockout_mode,
-                "time": None if knockout_mode is None else 0,
-                "channel": "Nodal",
-            },
-        }
+def _micropattern_cfg(
+    data_channels=12,
+    knockout_mode=None,
+    pool_copies=1,
+    curriculum=None,
+    dataset="micropatterns",
+    batches=2,
+    **micropattern_overrides,
+):
+    return DataConfig(
+        dataset=dataset,
+        batches=batches,
+        downsample=1,
+        micropattern=MicropatternDataConfig(
+            data_channels=data_channels,
+            timesteps=(0, 12, 24, 36, 48),
+            noise_strength=0.005,
+            pool_copies=pool_copies,
+            **micropattern_overrides,
+        ),
+        knockout=KnockoutConfig(
+            mode=knockout_mode,
+            time=None if knockout_mode is None else 0,
+            channel="Nodal",
+            curriculum=None if curriculum is None else tuple(curriculum),
+        ),
     )
-    cfg.data.intervention = cfg.knockout
-    return cfg.data
 
 
 def _patch_micropattern_loader(monkeypatch):
@@ -576,9 +660,9 @@ def test_260726_loader_uses_configured_even_replicate_count(monkeypatch, batch_c
         return data, {"channel_schema": object()}, ["marker"] * 14, boundary, mask
 
     monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
-    cfg = _micropattern_cfg(data_channels=14)
-    cfg.dataset = "micropatterns_260726"
-    cfg.batches = batch_count
+    cfg = _micropattern_cfg(
+        data_channels=14, dataset="micropatterns_260726", batches=batch_count
+    )
 
     data, _, _, _, mask, cfg_str = micropattern_helpers.load_data(
         cfg, impath="/tmp/micropatterns/"
@@ -590,20 +674,121 @@ def test_260726_loader_uses_configured_even_replicate_count(monkeypatch, batch_c
     assert f"data_b{batch_count}_c14" in cfg_str
 
 
-def test_micropattern_build_data_augmenter_selects_channel_specific_class():
+def test_260726_train_validation_split_reuses_training_histogram_bins(monkeypatch):
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+
+    calls = []
+    training_bins = jnp.arange(28, dtype=jnp.float32).reshape(14, 2)
+
+    def fake_loader(path, **kwargs):
+        calls.append(kwargs)
+        indices = tuple(kwargs["replicate_indices"])
+        count = len(indices) * kwargs["pool_copies"]
+        data = jnp.zeros((count, 5, 14, 2, 3))
+        boundary = jnp.ones((count, 1, 2, 3), dtype=bool)
+        mask = jnp.ones((count, 5, 14), dtype=bool)
+        bins = training_bins if kwargs["histogram_bins"] is None else kwargs["histogram_bins"]
+        return data, {"channel_schema": object(), "histogram_bins": bins}, ["marker"] * 14, boundary, mask
+
+    monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
+    cfg = _micropattern_cfg(
+        data_channels=14,
+        pool_copies=2,
+        dataset="micropatterns_260726",
+        train_replicates=(1, 2),
+        validation_replicates=(3, 4),
+    )
+
+    training, validation = micropattern_helpers.load_train_validation_data(
+        cfg, impath="/tmp/micropatterns/"
+    )
+
+    assert training[0].shape[0] == 4
+    assert validation[0].shape[0] == 2
+    assert calls[0]["replicate_indices"] == (0, 1)
+    assert calls[1]["replicate_indices"] == (2, 3)
+    assert calls[1]["pool_copies"] == 1
+    assert jnp.array_equal(calls[1]["histogram_bins"], training_bins)
+
+
+def test_260726_knockout_curriculum_uses_standard_conditions_and_schema(monkeypatch):
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+
+    calls = []
+
+    def fake_loader(path, **kwargs):
+        calls.append(kwargs)
+        conditions = kwargs["conditions"]
+        batch_count = 2 * len(conditions)
+        data = jnp.arange(batch_count)[:, None, None, None, None]
+        data = jnp.broadcast_to(data, (batch_count, 5, 14, 2, 3))
+        boundary = jnp.ones((batch_count, 1, 2, 3), dtype=bool)
+        mask = jnp.ones((batch_count, 5, 14), dtype=bool)
+        return (
+            data,
+            {
+                "channel_schema": object(),
+                "histogram_bins": jnp.ones((14, 2)),
+                "batch_conditions": tuple(
+                    condition for condition in conditions for _ in range(2)
+                ),
+                "batch_replicates": (1, 2) * len(conditions),
+                "source_conditions": np.arange(batch_count)[:, None],
+            },
+            ["marker"] * 14,
+            boundary,
+            mask,
+        )
+
+    monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
+    cfg = _micropattern_cfg(
+        data_channels=14,
+        curriculum=("baseline", "baseline", "ko_0h", "ko_24h"),
+        dataset="micropatterns_260726",
+    )
+
+    data, aux, _, _, mask, cfg_str = micropattern_helpers.load_data(
+        cfg, impath="/tmp/micropatterns/"
+    )
+
+    assert calls[0]["conditions"] == ("ctrl", "sl0", "sl24")
+    assert data.shape[0] == mask.shape[0] == 8
+    assert aux["intervention_times"] == (-1, -1, -1, -1, 0, 0, 24, 24)
+    assert aux["batch_conditions"] == (
+        "ctrl", "ctrl", "ctrl", "ctrl", "sl0", "sl0", "sl24", "sl24"
+    )
+    np.testing.assert_array_equal(
+        np.asarray(aux["source_conditions"])[:, 0], [0, 1, 0, 1, 2, 3, 4, 5]
+    )
+    assert aux["measurement_mask"].shape == (8, 5, 14)
+    assert aux["loss_measurement_mask"].shape == (8, 4, 14)
+    assert "_curbaseline-baseline-ko_0h-ko_24h" in cfg_str
+
+
+def test_260726_knockout_requires_full_schema():
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+
+    cfg = _micropattern_cfg(
+        data_channels=11, curriculum=("ko_0h",), dataset="micropatterns_260726"
+    )
+
+    with pytest.raises(ValueError, match="full 14-channel schema"):
+        micropattern_helpers.load_data(cfg, impath="/tmp/micropatterns/")
+
+
+def test_micropattern_build_data_augmenter_selects_channel_schema():
     import Experiments.micropatterns.config_helpers as micropattern_helpers
 
     augmenter_12, _ = micropattern_helpers.build_data_augmenter(
-        _micropattern_cfg(data_channels=12), 2000
+        _micropattern_cfg(data_channels=12), 2000, jnp.zeros((2, 3, 12, 4, 4)), 12
     )
     augmenter_4, _ = micropattern_helpers.build_data_augmenter(
-        _micropattern_cfg(data_channels=4), 2000
+        _micropattern_cfg(data_channels=4), 2000, jnp.zeros((2, 3, 4, 4, 4)), 6
     )
 
-    assert issubclass(augmenter_12, DataAugmenterGrouped)
-    assert issubclass(augmenter_12, DataAugmenter4Ch)
-    assert augmenter_12 is not augmenter_4
-    assert issubclass(augmenter_4, DataAugmenter4Ch)
+    assert augmenter_12.schema is MICROPATTERN_GROUPED_12CH_SCHEMA
+    assert augmenter_4.schema is MICROPATTERN_4CH_SCHEMA
+    assert augmenter_12.reinjection == augmenter_4.reinjection == "masked"
 
 
 def test_micropattern_knockout_role_patterns_repeat_by_batch():
@@ -654,7 +839,7 @@ def test_micropattern_masked_reinject_only_uses_measured_channels():
     selected = int(jnp.argsort(jax.random.uniform(key, shape=(2,)))[0])
     mask = jnp.zeros((1, 2, 9), dtype=jnp.float32).at[0, selected, 0].set(1.0)
 
-    out = micropattern_helpers.masked_reinject_callback_bit(
+    out = masked_reinject(
         x,
         x_true,
         9,
@@ -698,7 +883,7 @@ def test_micropattern_nodal_zeroing_wins_after_reinject_for_ko_batches():
     x_true = [100.0 * (i + 1) * jnp.ones((4, 9, 1, 1), dtype=jnp.float32) for i in range(3)]
     mask = jnp.ones((3, 3, 9), dtype=jnp.float32)
 
-    out = micropattern_helpers.masked_reinject_callback_bit(
+    out = masked_reinject(
         x,
         x_true,
         9,
@@ -714,11 +899,43 @@ def test_micropattern_nodal_zeroing_wins_after_reinject_for_ko_batches():
     assert jnp.all(out[2][:, 7] != 0.0)
 
 
+def test_nodal_knockout_blocks_read_but_preserves_recurrent_channel():
+    from NCA.trainer.intervention import (
+        apply_model_with_blocked_channel,
+        nodal_read_block_mask,
+    )
+
+    class ReadNodalModel:
+        def __call__(self, state, boundary_callback, key):
+            update = jnp.array([state[1], 2.0])
+            return boundary_callback(state + update)
+
+    state = jnp.array([3.0, 5.0])
+    output = apply_model_with_blocked_channel(
+        ReadNodalModel(),
+        state,
+        lambda value: value,
+        jax.random.PRNGKey(0),
+        channel=1,
+        blocked=True,
+    )
+
+    assert jnp.all(output == jnp.array([3.0, 7.0]))
+
+    assert jnp.all(
+        nodal_read_block_mask(24, 4) == jnp.array([False, False, True, True])
+    )
+    assert jnp.all(nodal_read_block_mask(0, 4))
+    assert not jnp.any(nodal_read_block_mask(-1, 4))
+
+
 def test_micropattern_rejects_unsupported_channel_count():
     import Experiments.micropatterns.config_helpers as micropattern_helpers
 
     with pytest.raises(ValueError, match="Expected 4 or 12"):
-        micropattern_helpers.build_data_augmenter(_micropattern_cfg(data_channels=5), 2000)
+        micropattern_helpers.build_data_augmenter(
+            _micropattern_cfg(data_channels=5), 2000, jnp.zeros((1, 3, 5, 4, 4)), 8
+        )
 
     with pytest.raises(ValueError, match="Expected 4 or 12"):
         micropattern_helpers.load_data(
@@ -733,7 +950,7 @@ def test_micropattern_rejects_4_channel_knockout_data():
     cfg = _micropattern_cfg(data_channels=4, knockout_mode="only_one_ko")
 
     with pytest.raises(ValueError, match="no-knockout group-A data"):
-        micropattern_helpers.build_data_augmenter(cfg, 2000)
+        micropattern_helpers.build_data_augmenter(cfg, 2000, jnp.zeros((1, 3, 4, 4, 4)), 6)
 
     with pytest.raises(ValueError, match="no-knockout group-A data"):
         micropattern_helpers.load_data(cfg, impath="/tmp/micropatterns/")
@@ -741,11 +958,86 @@ def test_micropattern_rejects_4_channel_knockout_data():
 
 def test_data_augmenter_4ch_colony_keeps_observable_channels():
     data = jnp.arange(1 * 5 * 4 * 2 * 3, dtype=jnp.float32).reshape(1, 5, 4, 2, 3)
-    augmenter = DataAugmenter4Ch(data_true=data, hidden_channels=2)
+    augmenter = MicropatternAugmenter(data, MICROPATTERN_4CH_SCHEMA, 6, reinjection="masked")
 
     x, y = augmenter.split_x_y(1)
 
     assert x[0].shape == (4, 6, 2, 3)
-    assert y[0].shape == (4, 6, 2, 3)
+    assert y[0].shape == (4, 4, 2, 3)
     assert jnp.array_equal(x[0][:, :4], data[0, :-1])
     assert jnp.array_equal(y[0][:, :4], data[0, 1:])
+
+
+@pytest.mark.parametrize("use_control_bounds", [False, True])
+def test_260726_cleaning_reaches_the_loader(monkeypatch, use_control_bounds):
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+    from Common.dataloader.micropattern_cleaning import MicropatternCleaningConfig
+
+    calls = []
+    shared_bins = jnp.arange(28, dtype=jnp.float32).reshape(14, 2)
+
+    def fake_loader(path, **kwargs):
+        calls.append(kwargs)
+        count = len(kwargs["replicate_indices"]) * len(kwargs["conditions"])
+        data = jnp.zeros((count, 5, 14, 2, 3))
+        boundary = jnp.ones((count, 1, 2, 3), dtype=bool)
+        mask = jnp.ones((count, 5, 14), dtype=bool)
+        return data, {"channel_schema": object(), "histogram_bins": shared_bins}, ["marker"] * 14, boundary, mask
+
+    monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
+    cleaning = MicropatternCleaningConfig(
+        enabled=True,
+        alignment_file="Experiments/micropatterns/conf/alignment/example.yaml",
+        knockouts_use_control_bounds=use_control_bounds,
+    )
+    cfg = _micropattern_cfg(
+        data_channels=14,
+        dataset="micropatterns_260726",
+        curriculum=("baseline", "ko_24h"),
+        cleaning=cleaning,
+    )
+
+    micropattern_helpers.load_train_validation_data(cfg, impath="/tmp/micropatterns/")
+
+    passed = calls[-1]["cleaning"]
+    assert passed.enabled
+    assert passed.alignment_file == str(
+        micropattern_helpers.REPOSITORY_ROOT / "Experiments/micropatterns/conf/alignment/example.yaml"
+    )
+    # Control bounds for knockouts come from a separate control-only load.
+    if use_control_bounds:
+        assert len(calls) == 2 and calls[0]["conditions"] == ("ctrl",)
+        assert calls[1]["histogram_bins"] is shared_bins
+    else:
+        assert len(calls) == 1 and calls[0]["histogram_bins"] is None
+
+
+def test_260726_quality_flags_reach_the_loader(monkeypatch, tmp_path):
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+    from Common.dataloader.quality_flags import save_quality_flags
+
+    calls = []
+
+    def fake_loader(path, **kwargs):
+        calls.append(kwargs)
+        count = kwargs["replicate_count"]
+        data = jnp.zeros((count, 5, 14, 2, 3))
+        boundary = jnp.ones((count, 1, 2, 3), dtype=bool)
+        mask = jnp.ones((count, 5, 14), dtype=bool)
+        return data, {"channel_schema": object(), "histogram_bins": None}, ["marker"] * 14, boundary, mask
+
+    monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
+    flags = tmp_path / "flags.yaml"
+    save_quality_flags(flags, {"cell_fate_markers/ctrl_s1/a_24h.ome.tif": "blurred"})
+
+    micropattern_helpers.load_data(
+        _micropattern_cfg(data_channels=14, dataset="micropatterns_260726", quality_flags_file=str(flags)),
+        impath="/tmp/micropatterns/",
+    )
+    micropattern_helpers.load_data(
+        _micropattern_cfg(data_channels=14, dataset="micropatterns_260726"),
+        impath="/tmp/micropatterns/",
+    )
+
+    assert calls[0]["excluded_images"] == ("cell_fate_markers/ctrl_s1/a_24h.ome.tif",)
+    assert calls[1]["excluded_images"] == ()

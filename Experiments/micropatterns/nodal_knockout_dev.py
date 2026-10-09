@@ -7,8 +7,6 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import marimo as mo
-    import sys
-    sys.path.append('/home/alex/PhD/Differentiable-Patterning/')
     import jax 
     import jax.numpy as np
     import numpy as onp
@@ -32,10 +30,10 @@ def _():
 
 @app.cell
 def _(data_14ch, plt, rearrange):
-    print(data_14ch[0].shape)
+    print(data_14ch.data.shape)
     C = 0
     plt.figure(figsize=(12,12))
-    plt.imshow(rearrange(data_14ch[0][:,-1],"B C x y -> (C x) (B y)"))
+    plt.imshow(rearrange(data_14ch.data[:,-1],"B C x y -> (C x) (B y)"))
     # plt.imshow(data_14ch[0][1,-1,9])
     return
 
@@ -95,21 +93,20 @@ def _(data, data_4ch, plt, rearrange):
 @app.cell
 def _(load_micropattern_circle_nodal_knockout_9ch_explicit_colony):
     def get_data_colony_knockout(DOWNSAMPLE):
-        """
-            Helper function that wraps load_micropattern_circle_8ch_individual_explicit_colony()
-            Paramaters
-            ----------
-            DOWNSAMPLE int
-                Downsampling factor to load data at
-            Returns
-            -------
-            data float32 [B=1 T C X Y]
-                Timecourse data at specified downsampling
-            boundary_mask bool [B=1 X Y]
-                Boundary mask at specified downsampling
-            CHANNEL_NAMES list of str
-                Channel names for data
+        """Load the NODAL knockout colony data (24h knockouts).
 
+        Parameters
+        ----------
+        DOWNSAMPLE : int
+            Downsampling factor.
+
+        Returns
+        -------
+        data : float32 [B=1, T, C, X, Y]
+        boundary_mask : bool [B=1, X, Y]
+        channel_names : list of str
+        measurement_mask
+            Which channels are measured at each timestep.
         """
         dataset = load_micropattern_circle_nodal_knockout_9ch_explicit_colony(
             impath="../Data/Timecourse Seperate Colonies/",
@@ -145,13 +142,10 @@ def _(get_data_colony_knockout, plt):
 @app.cell
 def _(onp):
     def duplicate_x_channels_9ch(x):
-        """
-            Duplicates channels in x to match the individual colony experiment groups.
-            X [N C H W] with C=9 -> [N 12 H W] with channels duplicated as needed.
-            data_channels = ["lmbr","tbxt","sox17","sox2" - "lmbr","tbxt","sox17","foxa2" - "cer1","lefty2","nodal" - "lef1" ]
-            input_channels = ["lmbr","tbxt","sox17","sox2","foxa2","cer1","lefty2","nodal","lef1"]
+        """Duplicate channels of ``x`` [N, 9, H, W] to match the 12 data channels.
 
-
+        input_channels = ["lmbr","tbxt","sox17","sox2","foxa2","cer1","lefty2","nodal","lef1"]
+        data_channels = ["lmbr","tbxt","sox17","sox2" - "lmbr","tbxt","sox17","foxa2" - "cer1","lefty2","nodal" - "lef1" ]
         """
         x_dup = [x[:,0:4],x[:,0:3],x[:,4:8],x[:,8:9]]
         return onp.concatenate(x_dup,axis=1)
@@ -175,16 +169,22 @@ def _(
     # for l in data_2:
         # print(l.shape)
     print(data_2.shape)
-    mask_full = duplicate_x_channels_9ch(CHANNEL_TIMESTEP_MASK)
+    # The measurement mask is [batch, target time, 9 input channels]; duplicate
+    # its channel axis (the last one) to match the 12 data channels
+    mask_full = rearrange(
+        duplicate_x_channels_9ch(rearrange(CHANNEL_TIMESTEP_MASK, "B T C -> (B T) C")),
+        "(B T) C -> B T C",
+        B=CHANNEL_TIMESTEP_MASK.shape[0],
+    )
     print(mask_full.shape)
     # print(data_2[_b].shape)
     pprint(chnames)
 
     plt.imshow(rearrange(data_2,"() T C X Y -> (C X) (T Y)"))
     plt.show()
-    data_masked = data_2[:,1:]*mask_full[None,:,:,None,None]
+    data_masked = data_2[:,1:]*mask_full[:,:,:,None,None]
     # plt.imshow(rearrange(data_masked,"() T C X Y -> (C X) (T Y)"))
-    plt.imshow(mask_full.T)
+    plt.imshow(mask_full[0].T)
     plt.colorbar()
     plt.show()
     return

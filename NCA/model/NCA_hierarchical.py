@@ -1,10 +1,9 @@
 """Two-level Hierarchical Neural Cellular Automaton.
 
-The implementation follows the Sensor/Actuator architecture described by
-Pande and Grattarola.  To remain compatible with the existing trainers, which
-carry a single ``[channels, height, width]`` array, the parent state is stored
-after the child channels and repeated over its corresponding fine-grid
-blocks.  It is reduced to its native resolution before every update.
+Follows the Sensor/Actuator architecture of Pande and Grattarola. So that the
+trainers can carry a single ``[channels, height, width]`` array, the parent
+state is stored after the child channels, repeated over its fine-grid blocks,
+and pooled back to its own resolution before every update.
 """
 
 import time
@@ -16,25 +15,21 @@ import jax.random as jr
 from jaxtyping import Array, Float, Int, Scalar
 
 from Common.model.abstract_model import AbstractModel
-from NCA.model.NCA_gated_model import gNCA
-from NCA.model.NCA_model import NCA
+from NCA.model.NCA_model import NCA, zero_conv
 
 
 class HNCA(AbstractModel):
     """A child NCA coupled bidirectionally to a lower-resolution parent NCA.
 
-    ``N_CHANNELS`` is the number of channels at *each* level.  The public
-    state contains ``2 * N_CHANNELS`` channels: child channels first, followed
-    by the blockwise-repeated parent channels.  ``self.N_CHANNELS`` therefore
-    reports the packed channel count expected by the existing trainer.
+    ``N_CHANNELS`` is the number of channels at *each* level. The state has
+    ``2 * N_CHANNELS`` channels: child channels first, then the blockwise-repeated
+    parent channels. ``self.N_CHANNELS`` is this packed count.
 
     The Sensor average-pools every child channel and adds the result to the
     parent state.  The Actuator upsamples the parent state, projects it with a
     learned 1x1 convolution, and adds the signal only to the child's hidden
     channels.  Only the child is passed to ``boundary_callback``.
     """
-
-    BATCHED_BOUNDARY_MODE = "internal"
 
     child_nca: NCA
     parent_nca: NCA
@@ -97,11 +92,9 @@ class HNCA(AbstractModel):
         self.ACTUATOR_GATED = ACTUATOR_GATED
         self.KERNEL_STR = list(KERNEL_STR)
         self.FIRE_RATE = FIRE_RATE
-        # The reference SimpleMultiplexer learns a separate mixing strength
-        # for every destination feature. Starting from zero prevents the
-        # Sensor from acting as a unit-strength recurrent forcing term before
-        # the hierarchy has learned how to use child feedback. ``tanh`` in the
-        # forward pass keeps these coefficients bounded during training.
+        # One mixing strength per parent channel (as in the reference
+        # SimpleMultiplexer). Starts at zero so the Sensor has no effect at
+        # first; tanh in the forward pass keeps it bounded.
         self.sensor_gain = jnp.zeros((N_CHANNELS, 1, 1))
 
         block_kwargs = dict(
@@ -112,10 +105,8 @@ class HNCA(AbstractModel):
             FIRE_RATE=FIRE_RATE,
             KERNEL_SCALE=KERNEL_SCALE,
         )
-        child_type = gNCA if CHILD_GATED else NCA
-        parent_type = gNCA if PARENT_GATED else NCA
-        self.child_nca = child_type(**block_kwargs, key=child_key)
-        self.parent_nca = parent_type(**block_kwargs, key=parent_key)
+        self.child_nca = NCA(**block_kwargs, GATED=CHILD_GATED, key=child_key)
+        self.parent_nca = NCA(**block_kwargs, GATED=PARENT_GATED, key=parent_key)
 
         hidden_channels = N_CHANNELS - OBS_CHANNELS
         self.actuator = eqx.nn.Conv2d(
@@ -125,18 +116,9 @@ class HNCA(AbstractModel):
             use_bias=True,
             key=actuator_key,
         )
-        # The child and parent NCA output layers begin at zero update.  The
-        # recurrent cross-scale path must obey the same invariant; otherwise
-        # a random actuator creates an unstable child-parent feedback loop
-        # before the first optimiser step.
-        self.actuator = eqx.tree_at(
-            lambda layer: (layer.weight, layer.bias),
-            self.actuator,
-            (
-                jnp.zeros_like(self.actuator.weight),
-                jnp.zeros_like(self.actuator.bias),
-            ),
-        )
+        # Start at zero like the NCA output layers; a random actuator gives an
+        # unstable child-parent feedback loop before training starts.
+        self.actuator = zero_conv(self.actuator)
 
     def get_config(self):
         return {
@@ -153,21 +135,6 @@ class HNCA(AbstractModel):
             "PADDING": self.child_nca.op.PADDING,
             "FIRE_RATE": self.FIRE_RATE,
         }
-
-    def get_weights(self):
-        """Return trainable arrays in the format expected by NCA loggers.
-
-        ``AbstractModel.get_weights`` returns a ``(leaves, tree_def)`` pair,
-        which is useful for generic reconstruction but is not the historical
-        NCA logging contract. The NCA loggers iterate directly over a flat
-        sequence of arrays.
-        """
-        differentiable, _ = self.partition()
-        return [
-            jnp.squeeze(value)
-            for value in jax.tree_util.tree_leaves(differentiable)
-            if eqx.is_array(value)
-        ]
 
     def _validate_state(self, x):
         if x.ndim != 3 or x.shape[0] != self.N_CHANNELS:
@@ -194,20 +161,19 @@ class HNCA(AbstractModel):
         parent = self._pool(child)
         return jnp.concatenate((child, self._upsample(parent)), axis=0)
 
-    # American spelling is convenient for callers outside this repository.
+    # American spelling alias
     initialize_state = initialise_state
 
     def boundary_regulariser_state(self, state):
-        """Expose only the fine grid to generic boundary regularisation."""
+        """Return only the child channels, for boundary regularisation."""
         return state[..., : self.LEVEL_CHANNELS, :, :]
 
     def prepare_pool_state(self, state):
         """Rebuild the parent from the child at each training-pool boundary.
 
-        The reference HNCA training loop pools child states and constructs a
-        fresh parent in its model-specific input wrapper. The packed-array
-        representation must do this explicitly or the additive Sensor signal
-        accumulates in the parent across successive optimiser iterations.
+        Without this, the additive Sensor signal would build up in the parent
+        across optimiser iterations (the reference implementation also builds a
+        fresh parent for each batch).
         """
         if state.shape[-3] != self.N_CHANNELS:
             raise ValueError(
@@ -255,12 +221,10 @@ class HNCA(AbstractModel):
         child = x[: self.LEVEL_CHANNELS]
         parent = self._pool(x[self.LEVEL_CHANNELS :])
 
-        # Sensor and multiplexer: summarize the child and add it to every
-        # corresponding parent channel.
+        # Sensor: add the pooled child to the parent.
         parent_input = parent + jnp.tanh(self.sensor_gain) * self._pool(child)
 
-        # Actuator and multiplexer: parent directives are projected and routed
-        # exclusively into the child's hidden channels.
+        # Actuator: project the parent into the child's hidden channels only.
         actuator_signal = self.actuator(self._upsample(parent))
         if self.ACTUATOR_GATED:
             actuator_signal = jax.nn.glu(actuator_signal, axis=0)

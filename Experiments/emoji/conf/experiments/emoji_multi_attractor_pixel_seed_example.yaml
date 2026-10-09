@@ -1,0 +1,60 @@
+# Three stable patterns grown from one-pixel seeds that differ only in their
+# channel code: alpha (channel 3) plus a binary code in hidden channels 4 and 5.
+# With n code channels this gives up to 2^n distinguishable seeds.
+experiment_name: multi-attractor-pixel-seed-1
+entrypoint: Experiments.emoji.train:run
+output_subdir: generated/emoji_multi_attractor_pixel_seed_example
+seed_mode: index
+
+grid:
+  logging.wandb.project: [NCA-emoji-multi-attractor]
+  model.family: [NCA, gNCA]
+  model.channels: [48]
+  model.fire_rate: [0.5]
+  data.emoji.task: [multi_attractor]
+  data.emoji.pairs:
+    - - initial: {image: crab.png, mode: pixel, channels: [3, 4]}
+        target: crab.png
+      - initial: {image: microbe.png, mode: pixel, channels: [3, 5]}
+        target: microbe.png
+      - initial: {image: rooster.png, mode: pixel, channels: [3, 4, 5]}
+        target: rooster.png
+  data.emoji.target_repeats: [2]
+  data.batches: [4]
+  data.emoji.shift_amount: [10]
+  data.emoji.pad: [[10,10,10,10]]
+  data.emoji.terminal_carry.start_iteration: [1000]
+  data.emoji.terminal_carry.schedule_iterations: [4000]
+  data.emoji.terminal_carry.initial_probability: [0.2]
+  data.emoji.terminal_carry.final_probability: [0.9]
+  data.emoji.regeneration.start_iteration: [2000]
+  data.emoji.regeneration.schedule_iterations: [3000]
+  data.emoji.regeneration.initial_probability: [0.05]
+  data.emoji.regeneration.final_probability: [0.25]
+  run.t: [128]
+  run.iterations: [8000]
+  loss.terms: [[l2]]
+  loss.regularisers.intermediate_state: [1.0]
+  loss.regularisers.contiguous_growth: [1.0]
+  loss.regularisers.localised_hidden: [1.0]
+
+
+  optimiser.learn_rate: [1e-3]
+  optimiser.decay_rate: [0.1]
+  optimiser.schedule.type: [cosine]
+  optimiser.schedule.final_factor: [0.5]
+  optimiser.schedule.transition_fraction: [0.75]
+  optimiser.type: [nadam]
+  optimiser.gradient_clip_norm: [1.0]
+  optimiser.apply_if_finite: [true]
+  optimiser.max_consecutive_errors: [16]
+  # optimiser.type: [nadam]
+  # optimiser.learn_rate: [0.001]
+  # optimiser.gradient_clip_norm: [1.0]
+
+  trainer.loop_autodiff: [lax]
+
+groups:
+  - experiment.stability_mode: [clean, terminal_carry, regeneration, terminal_carry_and_regeneration]
+    data.emoji.terminal_carry.enabled: [false, true, false, true]
+    data.emoji.regeneration.enabled: [false, false, true, true]

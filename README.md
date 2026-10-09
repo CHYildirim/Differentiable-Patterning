@@ -1,121 +1,95 @@
 # Differentiable Patterning
 
-Differentiable Patterning is a research codebase for learning and analysing
-self-organising spatiotemporal systems with differentiable programming. It
-contains neural cellular automata (NCA), differentiable partial differential
-equation (PDE) models, and experiment workflows for image-based and biological
-micropatterning tasks.
+Research code for training neural cellular automata (NCA) on spatial
+patterning tasks: emoji images, stem-cell micropatterns, snowmelt maps and
+simulated pattern-forming PDEs. Built on JAX, Equinox and Optax.
 
-This is active research software rather than a polished general-purpose
-package. APIs, model families, and experiment configurations may change as the
-research develops. Full training workloads are intended for remote
-accelerator/cluster hardware.
+This is active research code, so APIs and configs change. Full training runs
+are meant for remote GPUs.
 
-## Current scope
+Earlier work on trainable neural PDEs and agent-based models is in the git
+history.
 
-The actively maintained workflows focus on:
+## Layout
 
-- Neural cellular automata for learning, generating, and analysing spatial
-  patterns.
-- Differentiable PDE solvers and parameterised reaction--diffusion-style
-  models.
-- Config-driven experiments for emoji, micropattern, and impulse-optimisation
-  tasks.
-- Reproducible local model bundles and visualisation/export tooling.
-
-`ABM/` and `Experiments/archive/` contain exploratory or historical work. They
-may be useful as research references, but are not the best starting point for
-new development.
-
-## Repository layout
-
-| Path | Purpose |
+| Path | Contents |
 | --- | --- |
-| `Common/` | Shared JAX/Equinox models, spatial operators, data utilities, losses, and configuration support. |
-| `NCA/` | Neural cellular automaton models, training components, analysis, and registry support. |
-| `PDE/` | Differentiable PDE solvers, fixed models, and PDE training utilities. |
-| `Experiments/` | Hydra-configured experiment entry points and definitions. |
-| `demo/` | Small examples and walkthroughs for understanding the project. |
-| `docs/` | Maintained documentation for configuration, training, and model bundles. |
-| `WebDemo/` | Static WebGL visualisation and export tooling for compatible NCA models. |
-| `tests/` | Unit, integration, and hardware-specific checks. |
-
-Generated checkpoints, experiment outputs, W&B logs, figures, and videos are
-local research artifacts rather than source code.
+| `Common/` | Model base class, spatial operators, data loaders, losses, config dataclasses. |
+| `NCA/` | NCA models (`NCA/model/`) and the trainer (`NCA/trainer/`). |
+| `PDE/` | Pattern-forming PDEs (Gray-Scott, Cahn-Hilliard, Keller-Segel, ...) and the solver that turns them into NCA training data. |
+| `Experiments/` | YAML-configured entry points for each domain, the model registry and marimo explorers (`*_explorer.py`). |
+| `launch/` | Scripts that run a sweep on Kubernetes, Slurm or one local GPU. |
+| `demo/` | Walkthrough notebooks. |
+| `docs/` | Notes on configuration, the trainer and model bundles. |
+| `WebDemo/` | WebGL viewer for exported NCA models. |
+| `tests/` | Unit tests, plus a GPU memory check in `tests/hardware/`. |
 
 ## Installation
 
-Create an environment appropriate for the available hardware:
-
 ```bash
-pip install -r requirements/requirements_cpu.txt
+pip install -r requirements/requirements_cpu.txt   # or requirements_gpu.txt
 # or
-pip install -r requirements/requirements_gpu.txt
+conda env create -f requirements/env_cpu.yml       # or env_gpu.yml
+pip install -e .
 ```
 
-Conda environments are also provided:
+JAX GPU installs depend on the driver; treat the GPU requirements as a
+starting point. The cluster launchers set `PYTHONPATH` instead of installing.
+
+## Getting started
+
+1. `pytest tests/unit` checks the install (a few minutes on CPU, including a
+   tiny training run).
+2. An experiment is one YAML config, e.g.
+   `Experiments/emoji/conf/base_config.yaml`. It is converted to typed
+   dataclasses ([configuration](docs/configuration.md)), and
+   `Experiments/<domain>/train.py` loads the data, builds the model and
+   augmenter and hands them to the trainer ([NCA trainer](docs/nca_trainer.md)).
+3. Suggested reading order: `NCA/model/NCA_model.py` (the update rule),
+   `NCA/trainer/data_augmenter/` (how the training pool is refreshed),
+   `Common/trainer/loss_table.py` (the losses), then `NCA/trainer/step.py` and
+   `NCA/trainer/runner.py` (the training loop).
+4. Trained models are saved as bundles ([model registry](docs/model_registry.md)).
+   `marimo edit Experiments/model_registry_explorer.py` searches and compares
+   them.
+
+## Running sweeps
+
+Write a sweep file in `Experiments/<domain>/conf/experiments/`, turn it into a
+manifest with `Experiments/generate_configs.py`, then run it:
 
 ```bash
-conda env create -f requirements/env_cpu.yml
-# or
-conda env create -f requirements/env_gpu.yml
+# Kubernetes (fills launch/run.tpl.yml)
+bash launch/launch_batch_multi_job.sh Experiments/run_config.py <manifest> <workers> <gpu>
+# Slurm array
+bash launch/launch_batch_slurm.sh Experiments/run_config.py <manifest>
+# One local GPU, entries in turn
+python launch/launch_local_sweep.py <manifest>
 ```
 
-JAX installations can be hardware- and driver-specific. The supplied GPU
-requirements are a starting point; use the installation guidance appropriate
-for the target accelerator platform.
-
-## Start here
-
-For an overview of the current NCA workflow, begin with:
-
-- [`demo/nca_training_config_walkthrough.py`](demo/nca_training_config_walkthrough.py)
-- [`demo/nca_objectives_and_pool_dynamics.py`](demo/nca_objectives_and_pool_dynamics.py)
-- [Typed experiment configuration](docs/configuration.md)
-- [NCA trainer architecture](docs/nca_trainer.md)
-- [Local model registry](docs/model_registry.md)
-
-The `demo/` directory also contains PDE demonstrations and notebooks. These
-are intended for exploration; do not treat a training script as a lightweight
-smoke test.
-
-## Experiments and reproducibility
-
-Active experiments are defined in `Experiments/` using Hydra YAML
-configuration. Configurations are resolved and converted to typed, immutable
-dataclasses before model construction. Experiment-specific data loading,
-cluster launch settings, and expected compute requirements are intentionally
-kept close to the relevant experiment configuration.
-
-When enabled, NCA training publishes a versioned local model bundle containing
-the checkpoint, resolved configuration, provenance, and checksums. W&B is used
-for training logs. See the [model registry documentation](docs/model_registry.md)
-for bundle layout, recovery, and inspection commands.
-
-Cluster/container launch files, including `launch_slurm.sh`,
-`launch_batch_slurm.sh`, and `run.tpl.yml`, are provided for remote workflows.
-Review and adapt these to the target environment before submitting work.
+The cluster settings (accounts, partitions, storage paths) are specific to our
+clusters; adapt them before use. Training logs go to W&B, and with
+`model_store.enabled` each run also saves a model bundle.
 
 ## Tests
 
-Run the lightweight unit test suite with:
-
 ```bash
-pytest tests/unit
+pytest tests/unit                          # CPU
+python Experiments/pipeline_smoke_test.py  # GPU, end to end
 ```
 
-Integration and hardware tests may require GPU, SYCL, datasets, model assets,
-or cluster-specific configuration. They are not expected to run in every local
-development environment.
+The smoke test runs 12 very short training runs (emoji, micropatterns, Nodal
+knockout fine-tuning, snowmelt, PDEs) from the `smoke_*.yaml` sweep files.
+Each must finish and publish a bundle to the `pipeline-smoke` collection. The
+fine-tuning sweep is skipped until a trained model ID is set in its YAML file.
+`--dry-run` only writes the manifests and prints the Kubernetes commands.
+
+`tests/hardware/jax_gpu_mem_test.py` is a standalone GPU check.
 
 ## Web demo
 
-`WebDemo/` contains a static WebGL viewer for exported compatible NCA models,
-alongside a marimo analysis page. See the [WebDemo README](WebDemo/README.md)
-for export and serving instructions.
+See [WebDemo/README.md](WebDemo/README.md).
 
-## Research use
+## Citation
 
-If you build on this work, please contact the repository author for the most
-appropriate citation for the relevant model, experiment, or result. A formal
-citation and licence can be added here when they are available.
+Please contact the author for the right citation for a given model or result.

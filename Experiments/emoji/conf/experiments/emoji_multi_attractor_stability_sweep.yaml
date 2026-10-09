@@ -1,4 +1,4 @@
-experiment_name: stability-and-regeneration-4
+experiment_name: stability-and-regeneration-5
 entrypoint: Experiments.emoji.train:run
 output_subdir: generated/emoji_multi_attractor_stability_sweep
 seed_mode: index
@@ -11,15 +11,14 @@ grid:
   model.fire_rate: [0.5]
   data.emoji.task: [multi_attractor]
   data.emoji.pairs:
-    - - initial: {image: crab.png, mode: patch, size: 9}
+    - - initial: {image: crab.png, mode: patch, size: 1}
         target: crab.png
-      - initial: {image: microbe.png, mode: patch, size: 9}
+      - initial: {image: microbe.png, mode: patch, size: 1}
         target: microbe.png
   data.emoji.target_repeats: [2]
-  data.batches: [4]
+  data.batches: [2]
   data.emoji.shift_amount: [10]
   data.emoji.pad: [[10,10,10,10]]
-  data.emoji.regenerate: [false]
   data.emoji.terminal_carry.start_iteration: [1000]
   data.emoji.terminal_carry.schedule_iterations: [4000]
   data.emoji.terminal_carry.initial_probability: [0.2]

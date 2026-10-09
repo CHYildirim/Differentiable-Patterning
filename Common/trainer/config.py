@@ -1,4 +1,4 @@
-"""Configuration shared by trainer implementations across domains."""
+"""Optimiser and loss configs shared by all trainers."""
 
 from dataclasses import dataclass, field
 from typing import Mapping
@@ -17,7 +17,7 @@ class ScheduleConfig(ConfigValue):
 
 @dataclass(frozen=True)
 class LossWeightScheduleConfig(ConfigValue):
-    """Multiply one configured loss weight over a fraction of training."""
+    """Factor applied to one loss weight, changing over a fraction of training."""
 
     type: str = "constant"
     initial_factor: float = 1.0
@@ -50,7 +50,7 @@ class LossWeightScheduleConfig(ConfigValue):
 
 
 @dataclass(frozen=True)
-class OptimizerConfig(ConfigValue):
+class OptimiserConfig(ConfigValue):
     type: str = "nadam"
     learn_rate: float = 1e-3
     warmup_steps: int = 64
@@ -66,14 +66,14 @@ class OptimizerConfig(ConfigValue):
 
     def __post_init__(self):
         if self.learn_rate <= 0:
-            raise ValueError("training.optimizer.learn_rate must be positive")
+            raise ValueError("optimiser.learn_rate must be positive")
         if self.warmup_steps < 0:
-            raise ValueError("training.optimizer.warmup_steps cannot be negative")
+            raise ValueError("optimiser.warmup_steps cannot be negative")
 
 
 @dataclass(frozen=True)
 class LossTermConfig(ConfigValue):
-    """One independently configured component of the training objective."""
+    """One weighted term of the training loss."""
 
     type: str = "l2"
     weight: float = 1.0
@@ -88,7 +88,7 @@ class LossTermConfig(ConfigValue):
 
 @dataclass(frozen=True)
 class PointwiseLossConfig(LossTermConfig):
-    """Parameter-free pointwise, spectral, and distribution losses."""
+    """Pointwise, spectral and distribution losses with no extra options."""
 
 
 @dataclass(frozen=True)
@@ -102,10 +102,8 @@ class VggLossConfig(LossTermConfig):
     random_crop: bool = False
     random_channel_shuffle: bool = False
     channel_importance: tuple[float, ...] | None = None
+    # number of random projections, for the sliced OT metrics "otch" and "otsp"
     samples: int = 128
-    epsilon: float = 0.1
-    normalize: bool | None = None
-    tau: float | None = None
 
 
 @dataclass(frozen=True)
@@ -121,11 +119,6 @@ class OttLossConfig(LossTermConfig):
 @dataclass(frozen=True)
 class WassersteinLossConfig(LossTermConfig):
     samples: int = 128
-    epsilon: float = 0.1
-    metric: str = "l2"
-    normalize: bool | None = None
-    tau: float | None = None
-    amplitude_penalty: float | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +139,31 @@ class MultiTargetLossConfig(LossTermConfig):
     metric: str = "l2"
     random_crop: bool = False
     random_channel_shuffle: bool = False
+
+
+# Loss name in the config -> the config class holding that loss's options.
+# The loss functions themselves are in Common/trainer/loss_table.py, which
+# checks that it covers the same names.
+LOSS_TERM_CONFIGS = {
+    **{name: PointwiseLossConfig for name in (
+        "l1", "l2", "euclidean", "cosine", "spectral", "spectral_no_phase",
+        "spectral_phase", "bhattacharyya", "kl_divergence", "hellinger",
+        "average_amplitude",
+    )},
+    "l2_grouped": GroupedPointwiseLossConfig,
+    **{name: VggLossConfig for name in ("vgg", "vgg_grouped", "vgg_grouped_and_l2")},
+    **{name: OttLossConfig for name in ("ott", "ott_chstack", "ott_grouped", "ott_grouped_and_l2")},
+    **{name: WassersteinLossConfig for name in (
+        "sliced_wasserstein_spatial", "sliced_wasserstein_channel",
+        "sliced_wasserstein_full", "sliced_wasserstein_rotational",
+        "spectral_wasserstein_full",
+    )},
+    **{name: SummaryLossConfig for name in (
+        "radial_profile", "radial_profile_grouped", "channel_correlation",
+        "channel_correlation_grouped",
+    )},
+    "multi_target": MultiTargetLossConfig,
+}
 
 
 @dataclass(frozen=True)

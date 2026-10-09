@@ -1,22 +1,31 @@
-"""Lifecycle boundary shared by active NCA experiment entrypoints."""
+"""NCA training step shared by the experiment entrypoints."""
 
+from dataclasses import replace
+
+from Experiments.config_helpers import build_wandb_tags
 from NCA.trainer.context import TrainerContext
 from NCA.trainer.trainer import build_trainer
 
 
 def run_training(config, *, model, data, context: TrainerContext, key,
-                 timesteps=None, loss_overrides=None):
-    """Train and, when configured, publish the resulting model bundle."""
+                 timesteps=None, loss_overrides=None, progress_callback=None):
+    """Train and, when configured, publish the resulting model bundle.
 
+    ``progress_callback(iteration, loss, metrics)`` is passed on to
+    ``NcaTrainer.train`` (the demo notebooks use it for live plots).
+    """
+
+    context = replace(context, wandb_tags=tuple(build_wandb_tags(config)))
     trainer = build_trainer(config, model, data, context)
     result = trainer.train(
         key=key,
         timesteps=timesteps,
         loss_overrides=loss_overrides,
+        progress_callback=progress_callback,
     )
     model_store = config.model_store
     if model_store.enabled and result.checkpoint_path is not None:
-        from NCA.registry import publish_model_bundle
+        from Experiments.model_registry import publish_model_bundle
 
         if not model_store.root:
             raise ValueError(

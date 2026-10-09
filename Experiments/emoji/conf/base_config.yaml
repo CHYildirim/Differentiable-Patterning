@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 7
 seed: 0
 
 experiment:
@@ -23,8 +23,10 @@ data:
     # pairs:
     #   - initial: {image: crab.png, mode: patch, size: 12}
     #     target: crab.png
-    # `initial` may also be a filename (full image), or use mode: pixel with
-    # channel/value. All pairs must resolve to the same C x H x W shape.
+    # `initial` may also be a filename (full image), or a centre-pixel seed
+    # {image: crab.png, mode: pixel, channels: [3, 4], values: 1.0}, where
+    # channels index NCA channels (data channels, then hidden channels).
+    # All pairs must resolve to the same C x H x W shape.
     pairs: []
     # For multi_attractor, construct [initial, target, ...target] with this many
     # target states. Repeated targets train persistence as well as formation.
@@ -37,7 +39,6 @@ data:
     shift_amount: 2
     noise_strength: 0.005
     noise_mode: full
-    regenerate: true
     # Recycle terminal predictions into the terminal target->target pair. This
     # exposes the model to a geometric distribution of increasingly old states.
     terminal_carry:
@@ -46,10 +47,10 @@ data:
       schedule_iterations: 4000
       initial_probability: 0.5
       final_probability: 0.9
-    # Scheduled per-batch spatial damage. The default preserves the previous
-    # regenerate=true behavior (all batches damaged from the start).
+    # Scheduled per-batch spatial damage. The default damages every batch
+    # from the start.
     regeneration:
-      enabled: ${data.emoji.regenerate}
+      enabled: true
       start_iteration: 0
       schedule_iterations: 0
       initial_probability: 1.0
@@ -67,19 +68,19 @@ model:
 trainer:
   boundary_mode: soft
   grad_loss: true
-  sharding: null
-  backend:
-    type: none
   log_directory: logs/
   loss_time_channel_mask: null
   loop_autodiff: checkpointed
   log_every: 100
-  pool_admission_enabled: true
-  pool_admission_relative_threshold: 1.25
-  pool_admission_previous_relative_threshold: 1.10
-  pool_admission_absolute_threshold: null
-  pool_admission_ema_decay: 0.95
-  pool_admission_warmup: null
+  # Which rollouts are written back into the training pool.
+  pool_admission:
+    enabled: true
+    relative_threshold: 1.25
+    previous_relative_threshold: 1.10
+    absolute_threshold: null
+    ema_decay: 0.95
+    # null means the same as run.checkpoint_warmup.
+    warmup: null
 
 optimiser:
   type: nadam
@@ -115,9 +116,9 @@ run:
   derive_t_from_fire_rate: false
   fire_rate_step_numerator: null
   iterations: 8000
-  warmup: 10
+  # The best checkpoint is only saved after this many iterations.
+  checkpoint_warmup: 10
   write_images: true
-  filename_mode: hydra
 
 logging:
   backend: wandb
@@ -125,6 +126,9 @@ logging:
     project: NCA-emoji
     group: base-config
     tags: null
+    # Settings whose values become automatic tags. Generated sweeps set this
+    # to the settings their runs differ in; null tags every setting.
+    tag_keys: null
 
 # Publish the best checkpoint with this resolved config and provenance. The
 # SQLite catalogue is rebuilt separately, so concurrent jobs never share it.
@@ -132,8 +136,5 @@ model_store:
   enabled: true
   root: models
   collection: ${logging.wandb.project}
-  model_factory: Experiments.config_helpers:build_model
+  model_factory: NCA.model.factory:build_model
 
-knockout:
-  time: null
-  channel: null
