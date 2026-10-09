@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Eddie (Grid Engine) array job: one manifest entry per array task.
 #
-# Submit from the repo root on an Eddie login node, e.g.:
-#   N=$(grep -m1 '^count:' generated/cluster_test/manifest.yaml | awk '{print $2}')
-#   mkdir -p logs/eddie
-#   qsub -t 1-$N -tc 4 launch_eddie.sh Experiments/run_config.py generated/cluster_test/manifest.yaml
+# Do not qsub this directly; from the repo root on an Eddie login node run:
+#   bash submit_eddie.sh generated/cluster_test/manifest.yaml
 #
 #$ -N nca_array
 #$ -cwd
@@ -24,7 +22,7 @@ MANIFEST="${2:?Usage: qsub -t 1-N launch_eddie.sh PY_SCRIPT MANIFEST}"
 . /etc/profile.d/modules.sh
 module load anaconda
 eval "$(conda shell.bash hook)"
-conda activate diffpat
+conda activate /exports/cmvm/eddie/scs/groups/schumacher-group/chyildirim/.stay
 unset PYTHONHOME PYTHONPATH
 
 # --- Paths -----------------------------------------------------------------
