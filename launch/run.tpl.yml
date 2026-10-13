@@ -66,7 +66,7 @@ spec:
                 valueFrom:
                   secretKeyRef:
                     name: $USER-wandb-login
-                    key: WANDB_API_KEY
+                    key: key
               volumeMounts:
                 - name: workspace
                   mountPath: /workspace
