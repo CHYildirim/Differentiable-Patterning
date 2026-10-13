@@ -22,7 +22,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -47,7 +47,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -183,7 +183,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -208,7 +208,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -344,7 +344,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -369,7 +369,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -505,7 +505,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -530,7 +530,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -666,7 +666,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -691,7 +691,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -827,7 +827,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -852,7 +852,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -988,7 +988,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -1013,7 +1013,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -1149,7 +1149,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -1174,7 +1174,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -1310,7 +1310,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -1335,7 +1335,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
@@ -1471,7 +1471,7 @@ configs:
       target: microbe.png
     data.emoji.target_repeats: 2
     data.batches: 2
-    data.downsample: 0
+    data.downsample: 1
     logging.wandb.project: NCA-emoji
     logging.wandb.group: cluster_test
     model.family: NCA
@@ -1496,7 +1496,7 @@ configs:
     data:
       dataset: emojis
       batches: 2
-      downsample: 0
+      downsample: 1
       emoji:
         task: multi_attractor
         sequence:
