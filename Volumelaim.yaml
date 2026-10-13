@@ -1,7 +1,9 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
- name: s3042366-eidf107-ws1
+ name: $USER-ws1
+labels:
+   eidf/user: $USER
 spec:
  accessModes:
   - ReadWriteMany
