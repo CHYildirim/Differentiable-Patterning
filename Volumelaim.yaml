@@ -3,7 +3,7 @@ apiVersion: v1
 metadata:
  name: s3042366-eidf107-ws1
  labels:
-   eidf/user: $USER
+   eidf/user: s3042366-eidf107
 spec:
  accessModes:
   - ReadWriteMany
