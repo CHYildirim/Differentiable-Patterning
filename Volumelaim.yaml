@@ -1,0 +1,11 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+ name: $USER-ws1
+spec:
+ accessModes:
+  - ReadWriteMany
+ resources:
+  requests:
+   storage: 500Gi
+ storageClassName: csi-cephfs-sc

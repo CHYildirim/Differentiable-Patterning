@@ -1,18 +1,23 @@
-experiment_name: emoji_multi_attractor_2_3_4
+experiment_name: emoji_multi_attractor_outsource
 
 entrypoint: Experiments.emoji.train:run
 
-output_subdir: generated/emoji_multi_attractor_2_3_4
+output_subdir: generated/emoji_multi_attractor_outsource
 
 seed_mode: index
 
 grid: 
 
-  run.repeat: [0, 1]
+  run.repeat: [0, 1, 2]
 
   data.emoji.task: [multi_attractor]
 
   data.emoji.pairs:
+
+    
+    # ==========================================
+    # RUN 1 — 2 ATTRACTORS
+    # ==========================================
 
     - - initial: {image: crab.png, mode: patch, size: 1}
         target: crab.png
@@ -21,7 +26,7 @@ grid:
         target: microbe.png
 
     # ==========================================
-    # RUN 1 — 3 ATTRACTORS
+    # RUN 2 — 3 ATTRACTORS
     # ==========================================
     - - initial: {image: crab.png, mode: patch, size: 1}
         target: crab.png
@@ -34,7 +39,7 @@ grid:
 
 
     # ==========================================
-    # RUN 2 — 4 ATTRACTORS
+    # RUN 3— 4 ATTRACTORS
     # ==========================================
     - - initial: {image: crab.png, mode: patch, size: 1}
         target: crab.png
@@ -55,9 +60,9 @@ grid:
 
   logging.wandb.project: [NCA-emoji]
 
-  logging.wandb.group: [emoji-multi-attractor-2-3-4]
+  logging.wandb.group: [emoji-multi-attractor-outsource]
 
-  model.family: [gNCA]
+  model.family: [gNCA, NCA]
 
   model.channels: [64]
 
