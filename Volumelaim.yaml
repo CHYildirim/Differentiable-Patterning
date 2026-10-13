@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
- name: $USER-ws1
+ name: s3042366-eidf107-ws1
  labels:
    eidf/user: $USER
 spec:
