@@ -1,0 +1,66 @@
+schema_version: 3
+id: 20261016T171437Z-cfg6a4093e7e7de-ad4e4564
+config_id: 6a4093e7e7de
+display_name: gNCA_c64_data_multi_mi2mi-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: gnca-c64-data-multi-mi2mi-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-16T19:13:13.062262+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: d5e70ab4ac793c8af95f5db4fe5b8252ad6595e3116cf0f270e2e39d924f9971
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: gNCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261016T171437Z-cfg6a4093e7e7de-ad4e4564.eqx
+  best_iteration: 15606
+  best_loss: 0.002427539322525263
+  completed: true
+  error_code: 0
+  wandb_run_id: r9z66lon
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 6a4093e7e7de3a8b6ab731e010e8384806b3deecf9d19eb3be1eef4447817d0b
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: r9z66lon
+    tags:
+    - data.emoji.pairs.0.initial.image:microbe.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:2
+    - data.emoji.pairs.0.target:microbe.png
+    - data.emoji.pairs.1.initial.image:lizard.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:5
+    - data.emoji.pairs.1.target:lizard.png
+    - model.family:gNCA
+    - model.padding:CIRCULAR
+    - run.repeat:1
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 4d2a906cf51717310a68911f0c29e611f7b81d83faf1a5248315c27f5c598c51
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4

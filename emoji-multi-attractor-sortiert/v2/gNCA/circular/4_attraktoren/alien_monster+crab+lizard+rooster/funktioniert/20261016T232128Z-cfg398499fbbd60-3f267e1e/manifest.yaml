@@ -1,0 +1,74 @@
+schema_version: 3
+id: 20261016T232128Z-cfg398499fbbd60-3f267e1e
+config_id: 398499fbbd60
+display_name: gNCA_c64_data_multi_cr2cr-ro2ro-al2al-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: gnca-c64-data-multi-cr2cr-ro2ro-al2al-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-17T04:16:50.688401+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: a4664cf9f6639036843134e6f61ed7e21ef5be2b6ee5562f24b57f959faac8d0
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: gNCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261016T232128Z-cfg398499fbbd60-3f267e1e.eqx
+  best_iteration: 15864
+  best_loss: 0.0014180111465975642
+  completed: true
+  error_code: 0
+  wandb_run_id: tm5btb8u
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 398499fbbd60448fa14d586167cd7fb4c059a47cab5dc0da0c7bace29d90355a
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: tm5btb8u
+    tags:
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:rooster.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:3
+    - data.emoji.pairs.1.target:rooster.png
+    - data.emoji.pairs.2.initial.image:alien_monster.png
+    - data.emoji.pairs.2.initial.mode:pixel
+    - data.emoji.pairs.2.initial.channel:4
+    - data.emoji.pairs.2.target:alien_monster.png
+    - data.emoji.pairs.3.initial.image:lizard.png
+    - data.emoji.pairs.3.initial.mode:pixel
+    - data.emoji.pairs.3.initial.channel:5
+    - data.emoji.pairs.3.target:lizard.png
+    - model.family:gNCA
+    - model.padding:CIRCULAR
+    - run.repeat:1
+    - trainer.loop_autodiff:checkpointed
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 049524e0c31f92a090e9cd2e5c4ddb2a393b6c8d315c20fa7e4e2d4daf7f69de
+    shape:
+    - 4
+    - 4
+    - 120
+    - 120
+    dtype: <f4

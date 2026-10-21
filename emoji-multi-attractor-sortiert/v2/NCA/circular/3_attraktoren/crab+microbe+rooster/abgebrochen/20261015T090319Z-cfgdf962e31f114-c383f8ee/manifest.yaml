@@ -1,0 +1,70 @@
+schema_version: 3
+id: 20261015T090319Z-cfgdf962e31f114-c383f8ee
+config_id: df962e31f114
+display_name: NCA_c64_data_multi_cr2cr-mi2mi-ro2ro_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-cr2cr-mi2mi-ro2ro-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-00
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-15T09:22:26.020468+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: 500a4fe42077967503fcb5a55db89fab97bee6672ab6ded8b462d2666b29940f
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261015T090319Z-cfgdf962e31f114-c383f8ee.eqx
+  best_iteration: 862
+  best_loss: 0.013484510593116283
+  completed: false
+  error_code: 3
+  wandb_run_id: xfc8uzpn
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: df962e31f1149f36447d07a50ed11d5a4b52846501de1d02d1e50f97e5d37584
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: xfc8uzpn
+    tags:
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:microbe.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:2
+    - data.emoji.pairs.1.target:microbe.png
+    - data.emoji.pairs.2.initial.image:rooster.png
+    - data.emoji.pairs.2.initial.mode:pixel
+    - data.emoji.pairs.2.initial.channel:3
+    - data.emoji.pairs.2.target:rooster.png
+    - model.family:NCA
+    - model.padding:CIRCULAR
+    - run.repeat:1
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: e780d3a161f8a0f1694bb44ac75791750b0d2b046decd9bdd67470042fb64f2a
+    shape:
+    - 3
+    - 4
+    - 120
+    - 120
+    dtype: <f4

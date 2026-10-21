@@ -1,0 +1,66 @@
+schema_version: 3
+id: 20261017T164605Z-cfg9f499ef7f0e2-9af10d11
+config_id: 9f499ef7f0e2
+display_name: NCA_c64_data_multi_cr2cr-ro2ro_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-cr2cr-ro2ro-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0-
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-17T17:00:44.934150+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: a57cd92ab0dbc3b0f34cb0911f6c1155cd2d4ac2b9c79c0cdc66e48f0a6a3a95
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261017T164605Z-cfg9f499ef7f0e2-9af10d11.eqx
+  best_iteration: 1610
+  best_loss: 0.009976211935281754
+  completed: false
+  error_code: 3
+  wandb_run_id: m62sq6yd
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 9f499ef7f0e271495f8a9428fd52edf40b2d0bd2506674ea47e214462da68782
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: m62sq6yd
+    tags:
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:rooster.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:3
+    - data.emoji.pairs.1.target:rooster.png
+    - model.family:NCA
+    - model.padding:CIRCULAR
+    - run.repeat:1
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 5e9d2418b2f5cb40c1e91263deab6a7602c0465f309defa45334f6e46ff7a98f
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4

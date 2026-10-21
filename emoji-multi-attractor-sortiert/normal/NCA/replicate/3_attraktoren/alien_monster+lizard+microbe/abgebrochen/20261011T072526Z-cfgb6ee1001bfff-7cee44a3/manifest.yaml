@@ -1,0 +1,71 @@
+schema_version: 3
+id: 20261011T072526Z-cfgb6ee1001bfff-7cee44a3
+config_id: b6ee1001bfff
+display_name: NCA_c64_data_multi_mi2mi-al2al-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-mi2mi-al2al-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-00
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource
+created_at: '2026-10-11T08:23:42.615498+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: 4800072c8fe81fc24cd5fff6bc9993fb33edce777a3833e2aacacb262d61b87c
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-training-sweep-v1/20261011T072526Z-cfgb6ee1001bfff-7cee44a3.eqx
+  best_iteration: 3120
+  best_loss: 0.012108389288187027
+  completed: false
+  error_code: 2
+  wandb_run_id: 51jcc3p7
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: b6ee1001bfffc19b62fbd576d42c6b87d71e1ea8954152789e2233ce4f695108
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji-multi-attractor
+    group: emoji-multi-attractor-training-sweep-v1
+    run_id: 51jcc3p7
+    tags:
+    - data.batches:2
+    - data.emoji.pairs.0.initial.image:microbe.png
+    - data.emoji.pairs.0.initial.mode:patch
+    - data.emoji.pairs.0.initial.size:1
+    - data.emoji.pairs.0.target:microbe.png
+    - data.emoji.pairs.1.initial.image:alien_monster.png
+    - data.emoji.pairs.1.initial.mode:patch
+    - data.emoji.pairs.1.initial.size:1
+    - data.emoji.pairs.1.target:alien_monster.png
+    - data.emoji.pairs.2.initial.image:lizard.png
+    - data.emoji.pairs.2.initial.mode:patch
+    - data.emoji.pairs.2.initial.size:1
+    - data.emoji.pairs.2.target:lizard.png
+    - model.family:NCA
+    - model.padding:REPLICATE
+    - run.repeat:0
+    - attractors:3
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 8a1caba93d5f2d0d1904d5818d4fce39ba3fd16c903234cf8269ceb9ac3ef5b1
+    shape:
+    - 3
+    - 4
+    - 120
+    - 120
+    dtype: <f4

@@ -1,0 +1,75 @@
+schema_version: 3
+id: 20261010T072903Z-cfg5d36d44073fd-e7c842f7
+config_id: 5d36d44073fd
+display_name: NCA_c64_data_multi_cr2cr-mi2mi-al2al-li2li_b1_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-cr2cr-mi2mi-al2al-li2li-b1-ds1-regentrue-l2-is1-0-cg1-0-t128-
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource
+created_at: '2026-10-10T08:20:56.522643+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: 62e1a48ffacacc641872a7c7d1404394ac9de508b059598bf0e7390233857c4d
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-training-sweep-v1/20261010T072903Z-cfg5d36d44073fd-e7c842f7.eqx
+  best_iteration: 4523
+  best_loss: 0.008105387911200523
+  completed: false
+  error_code: 3
+  wandb_run_id: ralot16o
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 5d36d44073fda5bc27c60231b3d0f27658f8a6e269f0805eace728539076a488
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji-multi-attractor
+    group: emoji-multi-attractor-training-sweep-v1
+    run_id: ralot16o
+    tags:
+    - data.batches:1
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:patch
+    - data.emoji.pairs.0.initial.size:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:microbe.png
+    - data.emoji.pairs.1.initial.mode:patch
+    - data.emoji.pairs.1.initial.size:1
+    - data.emoji.pairs.1.target:microbe.png
+    - data.emoji.pairs.2.initial.image:alien_monster.png
+    - data.emoji.pairs.2.initial.mode:patch
+    - data.emoji.pairs.2.initial.size:1
+    - data.emoji.pairs.2.target:alien_monster.png
+    - data.emoji.pairs.3.initial.image:lizard.png
+    - data.emoji.pairs.3.initial.mode:patch
+    - data.emoji.pairs.3.initial.size:1
+    - data.emoji.pairs.3.target:lizard.png
+    - model.family:NCA
+    - model.padding:REPLICATE
+    - run.repeat:0
+    - attractors:4
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: a6ec47f66d084f5ceec7ce72ed9328250d43eb88554b9ad63ba1b3584161685e
+    shape:
+    - 4
+    - 4
+    - 120
+    - 120
+    dtype: <f4

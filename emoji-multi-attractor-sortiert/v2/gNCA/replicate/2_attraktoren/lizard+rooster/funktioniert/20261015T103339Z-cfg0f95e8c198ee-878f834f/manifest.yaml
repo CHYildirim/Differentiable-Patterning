@@ -1,0 +1,66 @@
+schema_version: 3
+id: 20261015T103339Z-cfg0f95e8c198ee-878f834f
+config_id: 0f95e8c198ee
+display_name: gNCA_c64_data_multi_ro2ro-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: gnca-c64-data-multi-ro2ro-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-15T12:35:45.739736+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: 6668f647f6d15e52e9a55cb012c45c13e41e8e2dd0700243731439ce04e2148a
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: gNCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261015T103339Z-cfg0f95e8c198ee-878f834f.eqx
+  best_iteration: 15777
+  best_loss: 0.0011639317963272333
+  completed: true
+  error_code: 0
+  wandb_run_id: ljr30gvw
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 0f95e8c198eea176a31d3fbec25204b32ef9fa31d474f6ec1937bbaa0efa95b2
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: ljr30gvw
+    tags:
+    - data.emoji.pairs.0.initial.image:rooster.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:3
+    - data.emoji.pairs.0.target:rooster.png
+    - data.emoji.pairs.1.initial.image:lizard.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:5
+    - data.emoji.pairs.1.target:lizard.png
+    - model.family:gNCA
+    - model.padding:REPLICATE
+    - run.repeat:0
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 0f7cdea3d5b693488c95955fc283dbb4ab31b4168163bef9f73c2bd0e8cce255
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4

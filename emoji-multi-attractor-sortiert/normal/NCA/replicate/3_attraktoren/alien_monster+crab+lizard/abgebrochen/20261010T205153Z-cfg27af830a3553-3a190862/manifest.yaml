@@ -1,0 +1,71 @@
+schema_version: 3
+id: 20261010T205153Z-cfg27af830a3553-3a190862
+config_id: 27af830a3553
+display_name: NCA_c64_data_multi_cr2cr-al2al-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-cr2cr-al2al-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-00
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource
+created_at: '2026-10-10T22:50:18.069513+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: 16c5946c668aa13b92a96ba5b3630a8ddd3f0f1f26a5bfc0546a282e3552a5f4
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-training-sweep-v1/20261010T205153Z-cfg27af830a3553-3a190862.eqx
+  best_iteration: 3678
+  best_loss: 0.006865243893116713
+  completed: false
+  error_code: 3
+  wandb_run_id: szpd2ub8
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 27af830a3553f1fa7bceacc44713a4c85837acb6ae296def5e65c851c67caf7f
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji-multi-attractor
+    group: emoji-multi-attractor-training-sweep-v1
+    run_id: szpd2ub8
+    tags:
+    - data.batches:2
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:patch
+    - data.emoji.pairs.0.initial.size:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:alien_monster.png
+    - data.emoji.pairs.1.initial.mode:patch
+    - data.emoji.pairs.1.initial.size:1
+    - data.emoji.pairs.1.target:alien_monster.png
+    - data.emoji.pairs.2.initial.image:lizard.png
+    - data.emoji.pairs.2.initial.mode:patch
+    - data.emoji.pairs.2.initial.size:1
+    - data.emoji.pairs.2.target:lizard.png
+    - model.family:NCA
+    - model.padding:REPLICATE
+    - run.repeat:0
+    - attractors:3
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: c9a333ae088e50fa6a9f207122ca609bc71edbdb335fd00242b540b4dfc44ef4
+    shape:
+    - 3
+    - 4
+    - 120
+    - 120
+    dtype: <f4

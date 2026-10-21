@@ -1,0 +1,66 @@
+schema_version: 3
+id: 20261018T071431Z-cfg4d7d50d3a14c-6ba248fe
+config_id: 4d7d50d3a14c
+display_name: gNCA_c64_data_multi_mi2mi-ro2ro_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: gnca-c64-data-multi-mi2mi-ro2ro-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-18T09:13:07.829126+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: 3490c05c7c41d95a175aa0707fc3cc30f2c8a97ef6a6e861037db8893b38a543
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: gNCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261018T071431Z-cfg4d7d50d3a14c-6ba248fe.eqx
+  best_iteration: 15576
+  best_loss: 0.001797372242435813
+  completed: true
+  error_code: 0
+  wandb_run_id: swmhlku5
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 4d7d50d3a14cce5a27e1a743066ae99ca783af2e60f2a1dbfeeebb1324f4cb56
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: swmhlku5
+    tags:
+    - data.emoji.pairs.0.initial.image:microbe.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:2
+    - data.emoji.pairs.0.target:microbe.png
+    - data.emoji.pairs.1.initial.image:rooster.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:3
+    - data.emoji.pairs.1.target:rooster.png
+    - model.family:gNCA
+    - model.padding:REPLICATE
+    - run.repeat:1
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: aa469b1942b1e0806185952b673ef1d9a1a893dbe6a98c4b8aea887ddac5e87f
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4

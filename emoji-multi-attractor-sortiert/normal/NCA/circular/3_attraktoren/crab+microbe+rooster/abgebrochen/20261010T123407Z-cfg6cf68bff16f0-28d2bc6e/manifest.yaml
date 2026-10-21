@@ -1,0 +1,71 @@
+schema_version: 3
+id: 20261010T123407Z-cfg6cf68bff16f0-28d2bc6e
+config_id: 6cf68bff16f0
+display_name: NCA_c64_data_multi_cr2cr-mi2mi-ro2ro_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-cr2cr-mi2mi-ro2ro-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-00
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource
+created_at: '2026-10-10T12:52:47.864703+00:00'
+status: failed
+artifact:
+  checkpoint: model.eqx
+  sha256: 81f8377c27d70b8145d979430c065b61f4c89f164e6946dfdc5b5d866c10198a
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-training-sweep-v1/20261010T123407Z-cfg6cf68bff16f0-28d2bc6e.eqx
+  best_iteration: 1190
+  best_loss: 0.01288666483014822
+  completed: false
+  error_code: 1
+  wandb_run_id: mk5hwq7d
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: 6cf68bff16f00b3b4c0166d69b6ad359b0fabe8678772f9547ad4d3ae4f2cf71
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji-multi-attractor
+    group: emoji-multi-attractor-training-sweep-v1
+    run_id: mk5hwq7d
+    tags:
+    - data.batches:2
+    - data.emoji.pairs.0.initial.image:crab.png
+    - data.emoji.pairs.0.initial.mode:patch
+    - data.emoji.pairs.0.initial.size:1
+    - data.emoji.pairs.0.target:crab.png
+    - data.emoji.pairs.1.initial.image:microbe.png
+    - data.emoji.pairs.1.initial.mode:patch
+    - data.emoji.pairs.1.initial.size:1
+    - data.emoji.pairs.1.target:microbe.png
+    - data.emoji.pairs.2.initial.image:rooster.png
+    - data.emoji.pairs.2.initial.mode:patch
+    - data.emoji.pairs.2.initial.size:1
+    - data.emoji.pairs.2.target:rooster.png
+    - model.family:NCA
+    - model.padding:CIRCULAR
+    - run.repeat:1
+    - attractors:3
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 5ef1ac2b30ac39a77630e06c79d2d93af60ec89a11019193340233107387c75b
+    shape:
+    - 3
+    - 4
+    - 120
+    - 120
+    dtype: <f4

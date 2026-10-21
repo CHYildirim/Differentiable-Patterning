@@ -1,0 +1,66 @@
+schema_version: 3
+id: 20261017T111708Z-cfgd561636e8941-585baec7
+config_id: d561636e8941
+display_name: NCA_c64_data_multi_al2al-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: nca-c64-data-multi-al2al-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0-
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource_v2
+created_at: '2026-10-17T13:19:26.740410+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: 3d0af3be7228b141e314e1b38d36b3c5ef5cdc27301fe3b97616725722128dd1
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: NCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-outsource/20261017T111708Z-cfgd561636e8941-585baec7.eqx
+  best_iteration: 15973
+  best_loss: 0.003937155939638615
+  completed: true
+  error_code: 0
+  wandb_run_id: yv9d7nb5
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: d561636e89418c1047265429507889b638ada1c1091a54da7c8c36a22d375ba6
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji
+    group: emoji-multi-attractor-outsource
+    run_id: yv9d7nb5
+    tags:
+    - data.emoji.pairs.0.initial.image:alien_monster.png
+    - data.emoji.pairs.0.initial.mode:pixel
+    - data.emoji.pairs.0.initial.channel:4
+    - data.emoji.pairs.0.target:alien_monster.png
+    - data.emoji.pairs.1.initial.image:lizard.png
+    - data.emoji.pairs.1.initial.mode:pixel
+    - data.emoji.pairs.1.initial.channel:5
+    - data.emoji.pairs.1.target:lizard.png
+    - model.family:NCA
+    - model.padding:REPLICATE
+    - run.repeat:1
+    - trainer.loop_autodiff:lax
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: 91d2d62a5700cbf9404e3c575c3b6fc19e1e31c24c6fcfc0a2cf70d41314b447
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4

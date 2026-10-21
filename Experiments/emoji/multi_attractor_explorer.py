@@ -22,7 +22,7 @@ rollout helpers are in ``Experiments/emoji/multi_attractor.py``.
 
 import marimo
 
-__generated_with = "0.23.16"
+__generated_with = "0.25.1"
 app = marimo.App(width="full")
 
 with app.setup(hide_code=True):
@@ -116,119 +116,184 @@ with app.setup(hide_code=True):
         if hue:
             ax.legend(title=hue, frameon=False, fontsize=8)
 
-    class HSVPicker(anywidget.AnyWidget):
-        """A hue-saturation wheel at the chosen value, with value and alpha sliders.
+    def outcome_gallery(labels, finals, captions, names, per_row=8):
+        """Up to ``per_row`` final states of each outcome, spread over its members."""
+        present = [int(label) for label in np.unique(labels)]
+        fig, axes = plt.subplots(len(present), per_row, figsize=(1.3 * per_row, 1.5 * len(present)), squeeze=False)
+        for row, label in enumerate(present):
+            members = np.flatnonzero(labels == label)
+            shown = members[np.linspace(0, len(members) - 1, min(per_row, len(members))).round().astype(int)]
+            for col in range(per_row):
+                if col < len(shown):
+                    show_image(axes[row, col], finals[shown[col]], captions[shown[col]], outcome_colour(label))
+                else:
+                    axes[row, col].axis("off")
+            axes[row, 0].set_ylabel(f"{ma.outcome_name(label, names)}\n({len(members)})",
+                                    color=outcome_colour(label), fontsize=9)
+        fig.tight_layout()
+        return fig
 
-        Hue is the angle (0 = red, to the right, anticlockwise) and saturation the
-        distance from the centre. Dots mark the ``markers`` (the training seed
-        colours, each drawn at its own value); clicking a dot selects its exact
-        colour. The selection is sent when the mouse is released.
+    class RGBCube(anywidget.AnyWidget):
+        """A rotatable RGB cube: red, green (up) and blue along the axes, black at the origin.
+
+        The far walls show their colours, so dots inside stay visible. Drag to
+        rotate. With ``pickable`` a click on a wall chooses its colour and a click
+        on a dot that dot's colour; sliders set any colour, including inner ones.
+        The selection is sent when the mouse is released. ``markers`` are the
+        training seed colours, ``points`` ``[r, g, b, colour, name]`` are drawn as
+        small squares (the basin cube), described when hovered.
+
+        With ``wheel`` a hue-saturation wheel at the chosen value is drawn beside
+        the cube (hue is the angle, 0 = red to the right, anticlockwise;
+        saturation the distance from the centre). Both show and set the same colour.
         """
 
         _esm = """
+        // Cube rotations by view_key, kept when a cell re-renders the widget
+        const views = (globalThis.__rgbCubeViews ??= {});
+        const CORNERS = [[0, 0, 0, "K"], [1, 0, 0, "R"], [0, 1, 0, "G"], [0, 0, 1, "B"],
+                         [0, 1, 1, "C"], [1, 0, 1, "M"], [1, 1, 0, "Y"], [1, 1, 1, "W"]];
+        function rgbToHsv(r, g, b) {
+          const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+          let h = 0;
+          if (d > 0) {
+            if (max === r) h = ((g - b) / d + 6) % 6;
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+          }
+          return [h / 6, max > 0 ? d / max : 0, max];
+        }
         function hsvToRgb(h, s, v) {
           const i = Math.floor(h * 6) % 6, f = h * 6 - Math.floor(h * 6);
           const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
           return [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i];
         }
-        function render({ model, el }) {
-          const size = 280, radius = 128, centre = size / 2;
+        function outlined(context, string, x, y) {
+          context.lineWidth = 3;
+          context.strokeStyle = "white";
+          context.strokeText(string, x, y);
+          context.fillStyle = "black";
+          context.fillText(string, x, y);
+        }
+        function marker(context, x, y, colour, name) {
+          context.beginPath();
+          context.arc(x, y, 6, 0, 2 * Math.PI);
+          context.fillStyle = colour;
+          context.fill();
+          context.lineWidth = 2;
+          context.strokeStyle = "black";
+          context.stroke();
+          // Name on the left when it would run off the canvas
+          const width = context.measureText(name).width;
+          outlined(context, name, x + 9 + width > context.canvas.width ? x - 9 - width : x + 9, y + 4);
+        }
+        function ring(context, x, y) {
+          for (const [width, colour] of [[4, "white"], [2, "black"]]) {
+            context.lineWidth = width;
+            context.strokeStyle = colour;
+            context.beginPath();
+            context.arc(x, y, 9, 0, 2 * Math.PI);
+            context.stroke();
+          }
+        }
+        function rangeRow(label, value, onInput, onChange) {
+          const row = document.createElement("label");
+          row.style.cssText = "display: flex; gap: 8px; align-items: center; font: 12px sans-serif;";
+          const input = document.createElement("input");
+          Object.assign(input, { type: "range", min: 0, max: 1, step: 0.01, value });
+          input.style.width = "200px";
+          const caption = document.createElement("span");
+          caption.style.width = "40px";
+          caption.textContent = label;
+          row.append(caption, input);
+          input.addEventListener("input", () => onInput(parseFloat(input.value)));
+          input.addEventListener("change", onChange);
+          return [row, input];
+        }
+        function newCanvas(size, cursor) {
           const canvas = document.createElement("canvas");
           canvas.width = size;
           canvas.height = size;
-          canvas.style.cssText = "cursor: crosshair; touch-action: none; max-width: 100%;";
-          const readout = document.createElement("div");
-          readout.style.cssText = "font: 12px monospace; display: flex; gap: 8px; align-items: center; margin-top: 4px;";
-          const swatch = document.createElement("span");
-          swatch.style.cssText = "display: inline-block; width: 28px; height: 18px; border: 1px solid #888;";
-          const text = document.createElement("span");
-          readout.append(swatch, text);
-          const context = canvas.getContext("2d");
+          canvas.style.cssText = `cursor: ${cursor}; touch-action: none; max-width: 100%;`;
+          return canvas;
+        }
+        function canvasPosition(canvas, size, event) {
+          const box = canvas.getBoundingClientRect();
+          return [(event.clientX - box.left) * size / box.width, (event.clientY - box.top) * size / box.height];
+        }
+        function caption(string) {
+          const hint = document.createElement("div");
+          hint.style.cssText = "font: 11px sans-serif; opacity: 0.7;";
+          hint.textContent = string;
+          return hint;
+        }
+
+        // Hue-saturation wheel at the chosen value: hue is the angle (0 = red, to the right,
+        // anticlockwise), saturation the distance from the centre
+        function wheelView(model, ui) {
+          const size = 280, radius = 128, centre = size / 2;
+          const element = document.createElement("div");
+          const canvas = newCanvas(size, "crosshair"), context = canvas.getContext("2d");
+          // Hue and saturation are kept here, as greys and black do not define them
+          const hsv = rgbToHsv(model.get("r"), model.get("g"), model.get("b"));
+          const [valueRow, valueInput] = rangeRow("value", hsv[2], (v) => {
+            hsv[2] = v;
+            ui.select(...hsvToRgb(...hsv));
+          }, () => model.save_changes());
+          element.append(canvas, valueRow, caption("click or drag on the wheel, or click a dot"));
           let wheel = null, wheelValue = null;
 
-          function slider(name, label) {
-            const row = document.createElement("label");
-            row.style.cssText = "display: flex; gap: 8px; align-items: center; font: 12px sans-serif;";
-            const input = document.createElement("input");
-            Object.assign(input, { type: "range", min: 0, max: 1, step: 0.01, value: model.get(name) });
-            input.style.width = "200px";
-            const caption = document.createElement("span");
-            caption.style.width = "40px";
-            caption.textContent = label;
-            row.append(caption, input);
-            input.addEventListener("input", () => { model.set(name, parseFloat(input.value)); draw(); });
-            input.addEventListener("change", () => model.save_changes());
-            model.on(`change:${name}`, () => { input.value = model.get(name); draw(); });
-            return row;
+          function sync() {
+            const chosen = [model.get("r"), model.get("g"), model.get("b")];
+            const local = hsvToRgb(...hsv);
+            if (Math.abs(local[0] - chosen[0]) + Math.abs(local[1] - chosen[1]) + Math.abs(local[2] - chosen[2]) < 1e-4) return;
+            const [h, s, v] = rgbToHsv(...chosen);
+            if (v > 1e-6 && s > 1e-6) hsv[0] = h;
+            if (v > 1e-6) hsv[1] = s;
+            hsv[2] = v;
+            valueInput.value = v;
           }
-          el.append(canvas, slider("v", "value"), slider("a", "alpha"), readout);
-
           function drawWheel() {
-            const v = model.get("v");
             wheel = context.createImageData(size, size);
             for (let y = 0; y < size; y++) {
               for (let x = 0; x < size; x++) {
                 const dx = x - centre, dy = centre - y, r = Math.hypot(dx, dy) / radius;
                 if (r > 1) continue;
                 const h = (Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1;
-                const rgb = hsvToRgb(h, r, v), index = 4 * (y * size + x);
+                const rgb = hsvToRgb(h, r, hsv[2]), index = 4 * (y * size + x);
                 wheel.data.set([255 * rgb[0], 255 * rgb[1], 255 * rgb[2], 255], index);
               }
             }
-            wheelValue = v;
+            wheelValue = hsv[2];
           }
           const position = (h, s) => [centre + s * radius * Math.cos(2 * Math.PI * h),
                                       centre - s * radius * Math.sin(2 * Math.PI * h)];
           function draw() {
-            if (wheelValue !== model.get("v")) drawWheel();
+            sync();
+            if (wheelValue !== hsv[2]) drawWheel();
             context.clearRect(0, 0, size, size);
             context.putImageData(wheel, 0, 0);
             context.font = "11px sans-serif";
-            for (const marker of model.get("markers")) {
-              const [x, y] = position(marker.h, marker.s);
-              context.beginPath();
-              context.arc(x, y, 6, 0, 2 * Math.PI);
-              context.fillStyle = marker.colour;
-              context.fill();
-              context.lineWidth = 2;
-              context.strokeStyle = "black";
-              context.stroke();
-              context.lineWidth = 3;
-              context.strokeStyle = "white";
-              context.strokeText(marker.label, x + 9, y + 4);
-              context.fillStyle = "black";
-              context.fillText(marker.label, x + 9, y + 4);
+            for (const m of model.get("markers")) {
+              // Each seed at its own value
+              const [x, y] = position(...rgbToHsv(m.r, m.g, m.b));
+              marker(context, x, y, m.colour, m.label);
             }
-            const [x, y] = position(model.get("h"), model.get("s"));
-            for (const [width, colour] of [[4, "white"], [2, "black"]]) {
-              context.lineWidth = width;
-              context.strokeStyle = colour;
-              context.beginPath();
-              context.arc(x, y, 9, 0, 2 * Math.PI);
-              context.stroke();
-            }
-            const [h, s, v, a] = ["h", "s", "v", "a"].map((name) => model.get(name));
-            const rgb = hsvToRgb(h, s, v);
-            swatch.style.background = `rgba(${rgb.map((c) => Math.round(255 * c)).join(",")},${a})`;
-            text.textContent = `H ${h.toFixed(3)}  S ${s.toFixed(2)}  V ${v.toFixed(2)}  A ${a.toFixed(2)}`
-              + `  |  RGB ${rgb.map((c) => c.toFixed(2)).join(" ")}`;
+            ring(context, ...position(hsv[0], hsv[1]));
           }
           function pick(event) {
-            const box = canvas.getBoundingClientRect();
-            const x = (event.clientX - box.left) * size / box.width;
-            const y = (event.clientY - box.top) * size / box.height;
-            for (const marker of model.get("markers")) {
-              const [mx, my] = position(marker.h, marker.s);
+            const [x, y] = canvasPosition(canvas, size, event);
+            for (const m of model.get("markers")) {
+              const [mx, my] = position(...rgbToHsv(m.r, m.g, m.b));
               if (Math.hypot(x - mx, y - my) < 8) {
-                for (const name of ["h", "s", "v", "a"]) model.set(name, marker[name]);
-                draw();
+                ui.select(m.r, m.g, m.b, m.a);
                 return;
               }
             }
             const dx = x - centre, dy = centre - y;
-            model.set("h", (Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1);
-            model.set("s", Math.min(1, Math.hypot(dx, dy) / radius));
-            draw();
+            hsv[0] = (Math.atan2(dy, dx) / (2 * Math.PI) + 1) % 1;
+            hsv[1] = Math.min(1, Math.hypot(dx, dy) / radius);
+            ui.select(...hsvToRgb(...hsv));
           }
           let dragging = false;
           canvas.addEventListener("pointerdown", (event) => {
@@ -242,17 +307,259 @@ with app.setup(hide_code=True):
             dragging = false;
             model.save_changes();
           });
-          for (const name of ["h", "s", "markers"]) model.on(`change:${name}`, draw);
-          draw();
+          return { element, draw };
+        }
+
+        // RGB cube: x = red, y = green (up), z = blue. The far walls are drawn, so dots inside stay visible.
+        function cubeView(model, ui) {
+          const size = 340, centre = size / 2, scale = (size / 2 - 24) / Math.sqrt(0.75);
+          const view = (views[model.get("view_key")] ??= { yaw: 0.55, pitch: 0.4 });
+          const pickable = model.get("pickable");
+          const element = document.createElement("div");
+          const canvas = newCanvas(size, "grab"), context = canvas.getContext("2d");
+          element.append(canvas, caption(pickable ? "drag to rotate · click a wall or dot to choose"
+                                                  : "drag to rotate · hover a dot for its colour and outcome"));
+
+          // view = Rx(pitch) Ry(yaw) (world - 0.5)
+          let ex, ey, ez;
+          function basis() {
+            const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw);
+            const cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+            ex = [cy, 0, sy];
+            ey = [sp * sy, cp, -sp * cy];
+            ez = [-cp * sy, sp, cp * cy];
+          }
+          function project(r, g, b) {
+            const w = [r - 0.5, g - 0.5, b - 0.5];
+            const dot = (u) => u[0] * w[0] + u[1] * w[1] + u[2] * w[2];
+            return [centre + scale * dot(ex), centre - scale * dot(ey), dot(ez)];
+          }
+
+          // Each pixel shows the colour where its view ray leaves the cube
+          let walls = null, wallsView = null;
+          function wallPoint(px, py) {
+            const vx = (px - centre) / scale, vy = (centre - py) / scale;
+            let lo = -Infinity, hi = Infinity, axis = 0;
+            const base = [0, 0, 0];
+            for (let i = 0; i < 3; i++) {
+              base[i] = vx * ex[i] + vy * ey[i];
+              const d = ez[i];
+              if (Math.abs(d) < 1e-9) {
+                if (Math.abs(base[i]) > 0.5) return null;
+                continue;
+              }
+              const t1 = (-0.5 - base[i]) / d, t2 = (0.5 - base[i]) / d;
+              const near = Math.min(t1, t2), far = Math.max(t1, t2);
+              if (near > lo) { lo = near; axis = i; }
+              if (far < hi) hi = far;
+            }
+            if (lo > hi) return null;
+            const p = [0, 1, 2].map((i) => Math.min(1, Math.max(0, base[i] + lo * ez[i] + 0.5)));
+            return [p, axis];
+          }
+          function drawWalls() {
+            walls = context.createImageData(size, size);
+            for (let y = 0; y < size; y++) {
+              for (let x = 0; x < size; x++) {
+                const hit = wallPoint(x + 0.5, y + 0.5);
+                if (hit === null) continue;
+                const [p, axis] = hit, shade = 0.8 + 0.2 * Math.abs(ez[axis]), index = 4 * (y * size + x);
+                walls.data.set([255 * shade * p[0], 255 * shade * p[1], 255 * shade * p[2], 255], index);
+              }
+            }
+            wallsView = `${view.yaw},${view.pitch}`;
+          }
+
+          let projected = [];
+          function draw() {
+            basis();
+            if (wallsView !== `${view.yaw},${view.pitch}`) drawWalls();
+            context.clearRect(0, 0, size, size);
+            context.putImageData(walls, 0, 0);
+            context.font = "11px sans-serif";
+
+            // Edges, then corner names pushed away from the centre
+            context.lineWidth = 1;
+            context.strokeStyle = "rgba(60, 60, 60, 0.6)";
+            for (const a of CORNERS) {
+              for (const b of CORNERS) {
+                const diff = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+                if (diff !== 1 || a[3] > b[3]) continue;
+                const [x1, y1] = project(a[0], a[1], a[2]), [x2, y2] = project(b[0], b[1], b[2]);
+                context.beginPath();
+                context.moveTo(x1, y1);
+                context.lineTo(x2, y2);
+                context.stroke();
+              }
+            }
+            for (const [r, g, b, name] of CORNERS) {
+              const [x, y] = project(r, g, b);
+              const dx = x - centre, dy = y - centre, norm = Math.hypot(dx, dy) || 1;
+              outlined(context, name, x + 12 * dx / norm - 4, y + 12 * dy / norm + 4);
+            }
+
+            // Points and markers, far to near
+            const side = model.get("point_size");
+            projected = [];
+            for (const [r, g, b, colour, name] of model.get("points")) {
+              projected.push({ kind: "point", r, g, b, colour, name, xyz: project(r, g, b) });
+            }
+            for (const m of model.get("markers")) {
+              projected.push({ kind: "marker", ...m, xyz: project(m.r, m.g, m.b) });
+            }
+            projected.sort((p, q) => p.xyz[2] - q.xyz[2]);
+            for (const p of projected) {
+              const [x, y] = p.xyz;
+              if (p.kind === "point") {
+                context.fillStyle = p.colour;
+                context.fillRect(x - side / 2, y - side / 2, side, side);
+                context.lineWidth = 0.5;
+                context.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                context.strokeRect(x - side / 2, y - side / 2, side, side);
+              } else {
+                marker(context, x, y, p.colour, p.label);
+              }
+            }
+            const [x, y] = project(model.get("r"), model.get("g"), model.get("b"));
+            ring(context, x, y);
+          }
+          function under(x, y) {
+            // Nearest object drawn on top
+            for (let i = projected.length - 1; i >= 0; i--) {
+              const p = projected[i], reach = p.kind === "marker" ? 8 : Math.max(4, model.get("point_size") / 2 + 1);
+              if (Math.hypot(x - p.xyz[0], y - p.xyz[1]) < reach) return p;
+            }
+            return null;
+          }
+          function pick(x, y) {
+            const p = under(x, y);
+            if (p !== null) {
+              ui.select(p.r, p.g, p.b, p.kind === "marker" ? p.a : undefined);
+            } else {
+              const hit = wallPoint(x, y);
+              if (hit === null) return;
+              ui.select(...hit[0]);
+            }
+            model.save_changes();
+          }
+
+          let drag = null, hovered = null, frame = null;
+          canvas.addEventListener("pointerdown", (event) => {
+            const start = canvasPosition(canvas, size, event);
+            drag = { start, last: start, moved: false };
+            canvas.setPointerCapture(event.pointerId);
+          });
+          canvas.addEventListener("pointermove", (event) => {
+            const [x, y] = canvasPosition(canvas, size, event);
+            if (drag !== null) {
+              if (Math.hypot(x - drag.start[0], y - drag.start[1]) > 3) drag.moved = true;
+              if (!drag.moved) return;
+              view.yaw += 0.01 * (x - drag.last[0]);
+              view.pitch = Math.max(-1.5, Math.min(1.5, view.pitch + 0.01 * (y - drag.last[1])));
+              drag.last = [x, y];
+              canvas.style.cursor = "grabbing";
+              if (frame === null) frame = requestAnimationFrame(() => { frame = null; draw(); });
+              return;
+            }
+            const p = under(x, y);
+            if (p === hovered) return;
+            hovered = p;
+            ui.hover(p === null ? null
+              : [p.r, p.g, p.b, p.a, p.kind === "marker" ? `seed → ${p.label}` : `→ ${p.name}`]);
+          });
+          canvas.addEventListener("pointerup", (event) => {
+            if (drag === null) return;
+            const moved = drag.moved;
+            drag = null;
+            canvas.style.cursor = "grab";
+            if (!moved && pickable) pick(...canvasPosition(canvas, size, event));
+          });
+          canvas.addEventListener("pointerleave", () => {
+            if (hovered === null) return;
+            hovered = null;
+            ui.hover(null);
+          });
+          return { element, draw };
+        }
+
+        function render({ model, el }) {
+          let hovered = null, frame = null;
+          const ui = {
+            // Set the chosen colour (alpha only when given); the caller saves it
+            select(r, g, b, a) {
+              model.set("r", r);
+              model.set("g", g);
+              model.set("b", b);
+              if (a !== undefined) model.set("a", a);
+              schedule();
+            },
+            // [r, g, b, a, text] of the dot under the mouse, or null
+            hover(info) {
+              hovered = info;
+              describe();
+            },
+          };
+          const panels = [cubeView(model, ui)];
+          if (model.get("wheel")) panels.unshift(wheelView(model, ui));
+          const row = document.createElement("div");
+          row.style.cssText = "display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;";
+          row.append(...panels.map((panel) => panel.element));
+          el.append(row);
+
+          const sliders = {};
+          if (model.get("pickable")) {
+            for (const [name, label] of [["r", "red"], ["g", "green"], ["b", "blue"], ["a", "alpha"]]) {
+              const [sliderRow, input] = rangeRow(label, model.get(name), (value) => {
+                model.set(name, value);
+                schedule();
+              }, () => model.save_changes());
+              sliders[name] = input;
+              el.append(sliderRow);
+            }
+          }
+          const readout = document.createElement("div");
+          readout.style.cssText = "font: 12px monospace; display: flex; gap: 8px; align-items: center; margin-top: 4px;";
+          const swatch = document.createElement("span");
+          swatch.style.cssText = "display: inline-block; width: 28px; height: 18px; border: 1px solid #888;";
+          const text = document.createElement("span");
+          readout.append(swatch, text);
+          el.append(readout);
+
+          function describe() {
+            const [r, g, b, a, note] = hovered ?? [model.get("r"), model.get("g"), model.get("b"), model.get("a"), "chosen"];
+            swatch.style.background = `rgba(${[r, g, b].map((c) => Math.round(255 * c)).join(",")},${a ?? 1})`;
+            const [h, s, v] = rgbToHsv(r, g, b);
+            text.textContent = `R ${r.toFixed(2)}  G ${g.toFixed(2)}  B ${b.toFixed(2)}`
+              + (a === undefined ? "" : `  A ${a.toFixed(2)}`)
+              + `  |  H ${h.toFixed(3)}  S ${s.toFixed(2)}  V ${v.toFixed(2)}  |  ${note}`;
+          }
+          function drawAll() {
+            frame = null;
+            for (const [name, input] of Object.entries(sliders)) input.value = model.get(name);
+            for (const panel of panels) panel.draw();
+            describe();
+          }
+          function schedule() {
+            if (frame === null) frame = requestAnimationFrame(drawAll);
+          }
+          for (const name of ["r", "g", "b", "a", "markers", "points", "point_size"]) model.on(`change:${name}`, schedule);
+          drawAll();
         }
         export default { render };
         """
-        h = traitlets.Float(0.0).tag(sync=True)
-        s = traitlets.Float(1.0).tag(sync=True)
-        v = traitlets.Float(1.0).tag(sync=True)
+        r = traitlets.Float(1.0).tag(sync=True)
+        g = traitlets.Float(0.0).tag(sync=True)
+        b = traitlets.Float(0.0).tag(sync=True)
         a = traitlets.Float(1.0).tag(sync=True)
-        # [{h, s, v, a, label, colour}]
+        # [{r, g, b, a, label, colour}]
         markers = traitlets.List([]).tag(sync=True)
+        # [[r, g, b, colour, name]]
+        points = traitlets.List([]).tag(sync=True)
+        point_size = traitlets.Float(6.0).tag(sync=True)
+        pickable = traitlets.Bool(True).tag(sync=True)
+        # Widgets with the same key share their rotation
+        view_key = traitlets.Unicode("picker").tag(sync=True)
+        wheel = traitlets.Bool(False).tag(sync=True)
 
 
 @app.cell(hide_code=True)
@@ -266,12 +573,6 @@ def _():
     - **Input space**: choose any seed colour, and map which emoji each colour grows into
     - A final state counts as a target when its RGBA mean squared error is below *tolerance* × the smallest error between two targets
     """)
-    return
-
-
-@app.cell
-def _():
-    jax.devices()
     return
 
 
@@ -658,7 +959,9 @@ def _():
     ## Input space
 
     - The chosen colour (RGBA) is written into the seed's pixels; hidden channels come from the *hidden channels* seed
-    - Click a dot on the wheel to select a training seed colour
+    - Two views of the same colour: the hue-saturation wheel (at the value set below it) and the RGB cube
+    - Wheel: click or drag; cube: drag to rotate, click a wall; in both, a dot selects that training seed colour
+    - The red/green/blue/alpha sliders reach any colour, including the inside of the cube
     - Pixel seeds (`mode: pixel`) differ only in their hidden code, so their dots overlap; choose the code with *Hidden channels*
     """)
     return
@@ -718,13 +1021,14 @@ def _(bundles, explore_model, get_seeds):
 
 @app.cell(hide_code=True)
 def _(explore_names, explore_pair_target, explore_seeds, seed_rgba):
-    _markers = []
-    for _pair, (_h, _s, _v, _a) in enumerate(ma.rgba_to_hsva(seed_rgba).tolist()):
-        _target = int(explore_pair_target[_pair])
-        _markers.append({"h": _h, "s": _s, "v": _v, "a": _a, "label": explore_names[_target],
-                         "colour": outcome_colour(_target)})
-    _h, _s, _v, _a = _markers[0]["h"], _markers[0]["s"], _markers[0]["v"], _markers[0]["a"]
-    picker = mo.ui.anywidget(HSVPicker(h=_h, s=_s, v=_v, a=_a, markers=_markers))
+    seed_markers = [
+        {"r": _r, "g": _g, "b": _b, "a": _a, "label": explore_names[int(explore_pair_target[_pair])],
+         "colour": outcome_colour(int(explore_pair_target[_pair]))}
+        for _pair, (_r, _g, _b, _a) in enumerate(np.clip(seed_rgba, 0.0, 1.0).astype(float).tolist())
+    ]
+    _first = seed_markers[0]
+    picker = mo.ui.anywidget(RGBCube(r=_first["r"], g=_first["g"], b=_first["b"], a=_first["a"],
+                                     markers=seed_markers, wheel=True))
 
     # Hidden channels only matter for pixel seeds that set them
     _has_hidden = bool(np.any(explore_seeds[:, 4:] != 0))
@@ -738,7 +1042,7 @@ def _(explore_names, explore_pair_target, explore_seeds, seed_rgba):
     explore_repeats = mo.ui.number(1, 32, value=1, step=1, label="Rollouts")
     _controls = [explore_length, explore_repeats] + ([hidden_base] if _has_hidden else [])
     mo.hstack([picker, mo.vstack(_controls)], justify="start", align="start", gap=2)
-    return explore_length, explore_repeats, hidden_base, picker
+    return explore_length, explore_repeats, hidden_base, picker, seed_markers
 
 
 @app.cell(hide_code=True)
@@ -767,8 +1071,7 @@ def _(
     picker,
     tolerance,
 ):
-    _hsva = [picker.value[_name] for _name in ("h", "s", "v", "a")]
-    _rgba = ma.hsva_to_rgba([_hsva])
+    _rgba = np.array([[picker.value[_name] for _name in ("r", "g", "b", "a")]], dtype=np.float32)
     _states = np.repeat(ma.coloured_seeds(base_seed, explore_footprint, _rgba), explore_repeats.value, axis=0)
     _steps = explore_length.value * explore_cfg.run.t
     _n_frames = math.gcd(_steps, 8)
@@ -863,8 +1166,8 @@ def _(
     explore_length,
     explore_targets,
     get_model,
-    hidden_base,
     memory_budget,
+    hidden_base,
     parameter_noise,
 ):
     _key = (explore_id, parameter_noise.value, basin_slice.value, basin_fixed.value, basin_alpha.value,
@@ -918,7 +1221,7 @@ def _(
                      levels=[np.log10(_threshold)], colors="white", linewidths=1)
 
     _seed_hsva = ma.rgba_to_hsva(seed_rgba)
-    _chosen = [picker.value[_name] for _name in ("h", "s", "v", "a")]
+    _chosen = ma.rgba_to_hsva([picker.value[_name] for _name in ("r", "g", "b", "a")])
     for _ax in _axes:
         for _pair, _colour in enumerate(_seed_hsva):
             _ax.scatter(2 * np.pi * _colour[0], _colour[_radial_index], s=60, zorder=3,
@@ -937,28 +1240,121 @@ def _(
 
     # Some final states of each outcome
     _present = [int(_label) for _label in np.unique(_labels)]
-    _per_row = 8
-    _fig2, _axes2 = plt.subplots(len(_present), _per_row, figsize=(1.3 * _per_row, 1.5 * len(_present)), squeeze=False)
-    for _row, _label in enumerate(_present):
-        _members = np.flatnonzero(_labels == _label)
-        _shown = _members[np.linspace(0, len(_members) - 1, min(_per_row, len(_members))).round().astype(int)]
-        for _col in range(_per_row):
-            _ax = _axes2[_row, _col]
-            if _col < len(_shown):
-                _h, _s, _v, _a = basin["hsva"][_shown[_col]]
-                show_image(_ax, basin["final"][_shown[_col]], f"H{_h:.2f} S{_s:.2f} V{_v:.2f}",
-                           outcome_colour(_label))
-            else:
-                _ax.axis("off")
-        _axes2[_row, 0].set_ylabel(f"{ma.outcome_name(_label, explore_names)}\n({len(_members)})",
-                                    color=outcome_colour(_label), fontsize=9)
-    _fig2.tight_layout()
+    _captions = [f"H{_h:.2f} S{_s:.2f} V{_v:.2f}" for _h, _s, _v, _a in basin["hsva"]]
+    _fig2 = outcome_gallery(_labels, basin["final"], _captions, explore_names)
 
     _counts = {ma.outcome_name(_label, explore_names): int(np.sum(_labels == _label)) for _label in _present}
     mo.vstack([
         _fig,
         mo.md("Outcome counts: " + ", ".join(f"{_name} **{_count}**" for _name, _count in _counts.items())),
         mo.accordion({"Final states by outcome": _fig2}),
+    ])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### Basin cube
+
+    - One rollout per colour on a regular grid in the RGB cube, at a fixed alpha
+    - Each square is coloured by the target its colour grows into; hover a square for its colour and outcome
+    - Dots are training seeds, the ring is the colour chosen above; untick outcomes to look behind them
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    cube_steps = mo.ui.number(2, 16, value=8, step=1, label="Steps per axis")
+    cube_alpha = mo.ui.slider(0.0, 1.0, value=1.0, step=0.05, label="Alpha", show_value=True)
+    cube_run = mo.ui.run_button(label="Compute basin cube")
+    mo.hstack([cube_steps, cube_alpha, cube_run], justify="start", gap=1.5, wrap=True)
+    return cube_alpha, cube_run, cube_steps
+
+
+@app.cell
+def _():
+    # Basin cubes computed in this session, keyed by their settings
+    cube_cache = {}
+    return (cube_cache,)
+
+
+@app.cell(hide_code=True)
+def _(
+    base_seed,
+    cube_alpha,
+    cube_cache,
+    cube_run,
+    cube_steps,
+    eval_seed,
+    explore_cfg,
+    explore_footprint,
+    explore_id,
+    explore_length,
+    explore_targets,
+    get_model,
+    hidden_base,
+    memory_budget,
+    parameter_noise,
+):
+    _key = (explore_id, parameter_noise.value, cube_steps.value, cube_alpha.value, explore_length.value,
+            hidden_base.value, eval_seed.value)
+    if cube_run.value and _key not in cube_cache:
+        _axis = (np.arange(cube_steps.value) + 0.5) / cube_steps.value
+        _r, _g, _b = np.meshgrid(_axis, _axis, _axis, indexing="ij")
+        _colours = np.stack([_r, _g, _b, np.full_like(_r, cube_alpha.value)], axis=-1).reshape(-1, 4)
+        _colours = _colours.astype(np.float32)
+        _states = ma.coloured_seeds(base_seed, explore_footprint, _colours)
+        with mo.status.spinner(f"Rolling out {len(_states)} seed colours"):
+            _distances, _rgba = ma.rollout(
+                get_model(explore_id, parameter_noise.value), _states, explore_targets,
+                explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
+                memory_gb=memory_budget.value,
+            )
+        cube_cache[_key] = {"distances": _distances[:, -1], "final": _rgba[:, -1], "rgba": _colours}
+    mo.stop(_key not in cube_cache, mo.md(
+        f"Press **Compute basin cube** ({cube_steps.value ** 3} rollouts; uses the length, hidden channels, "
+        "noise and memory settings above)."))
+    basin_cube = cube_cache[_key]
+    return (basin_cube,)
+
+
+@app.cell(hide_code=True)
+def _(basin_cube, explore_names, explore_threshold_base, tolerance):
+    cube_labels = ma.classify(basin_cube["distances"], basin_cube["final"], tolerance.value * explore_threshold_base)
+    _present = [ma.outcome_name(int(_label), explore_names) for _label in np.unique(cube_labels)]
+    cube_show = mo.ui.multiselect(_present, value=_present, label="Show outcomes")
+    cube_size = mo.ui.slider(2, 16, value=6, step=1, label="Square size", show_value=True)
+    mo.hstack([cube_show, cube_size], justify="start", gap=1.5, wrap=True)
+    return cube_labels, cube_show, cube_size
+
+
+@app.cell(hide_code=True)
+def _(basin_cube, cube_labels, cube_show, cube_size, explore_names, picker, seed_markers):
+    _names = [ma.outcome_name(int(_label), explore_names) for _label in cube_labels]
+    _points = [
+        [round(float(_r), 3), round(float(_g), 3), round(float(_b), 3), outcome_colour(int(_label)), _name]
+        for (_r, _g, _b, _a), _label, _name in zip(basin_cube["rgba"], cube_labels, _names)
+        if _name in cube_show.value
+    ]
+    _view = mo.ui.anywidget(RGBCube(
+        r=picker.value["r"], g=picker.value["g"], b=picker.value["b"], a=picker.value["a"], markers=seed_markers,
+        points=_points, point_size=float(cube_size.value), pickable=False, view_key="basin",
+    ))
+
+    _present = [int(_label) for _label in np.unique(cube_labels)]
+    _legend = "<br>".join(
+        f'<span style="display:inline-block;width:10px;height:10px;background:{outcome_colour(_label)};'
+        f'border:1px solid #555;margin-right:6px"></span>{ma.outcome_name(_label, explore_names)} '
+        f"**{int(np.sum(cube_labels == _label))}**"
+        for _label in _present
+    )
+    _captions = [f"R{_r:.2f} G{_g:.2f} B{_b:.2f}" for _r, _g, _b, _a in basin_cube["rgba"]]
+    _gallery = outcome_gallery(cube_labels, basin_cube["final"], _captions, explore_names)
+    mo.vstack([
+        mo.hstack([_view, mo.md(f"Outcome counts:<br>{_legend}")], justify="start", align="start", gap=2),
+        mo.accordion({"Final states by outcome": _gallery}),
     ])
     return
 

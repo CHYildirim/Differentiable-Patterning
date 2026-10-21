@@ -1,0 +1,67 @@
+schema_version: 3
+id: 20261011T235939Z-cfgc50985d82674-84efd6fd
+config_id: c50985d82674
+display_name: gNCA_c64_data_multi_al2al-li2li_b2_ds1_regenTrue_l2_is1.0_cg1.0__t128_lr0.001_dr0.99_nadam_schedexp0.99_blocknorm
+slug: gnca-c64-data-multi-al2al-li2li-b2-ds1-regentrue-l2-is1-0-cg1-0-t128-lr0-001-dr0
+collection: NCA-emoji
+experiment: emoji_multi_attractor_outsource
+created_at: '2026-10-12T01:58:50.118445+00:00'
+status: complete
+artifact:
+  checkpoint: model.eqx
+  sha256: 6eadbc7ba65bda3f49aadcda9782cd425bb136781b156b70c40773e803d8872b
+  format: equinox-leaves
+  format_version: 1
+model:
+  factory: NCA.model.factory:build_model
+  family: gNCA
+training:
+  checkpoint_path: /workspace/writeable/Models/emoji-multi-attractor-training-sweep-v1/20261011T235939Z-cfgc50985d82674-84efd6fd.eqx
+  best_iteration: 15748
+  best_loss: 0.001183335785754025
+  completed: true
+  error_code: 0
+  wandb_run_id: wavm3wl4
+data:
+  dataset: emojis
+  task: multi_attractor
+provenance:
+  config_sha256: c50985d8267421a6090302180ef79ab5dfb271e8cf556fd6e66cccc180fd24b7
+  git:
+    commit: null
+    dirty: null
+  python: 3.13.13
+  packages:
+    jax: 0.10.1
+    equinox: 0.13.8
+    optax: 0.2.8
+    diffrax: 0.7.2
+  wandb:
+    project: NCA-emoji-multi-attractor
+    group: emoji-multi-attractor-training-sweep-v1
+    run_id: wavm3wl4
+    tags:
+    - data.batches:2
+    - data.emoji.pairs.0.initial.image:alien_monster.png
+    - data.emoji.pairs.0.initial.mode:patch
+    - data.emoji.pairs.0.initial.size:1
+    - data.emoji.pairs.0.target:alien_monster.png
+    - data.emoji.pairs.1.initial.image:lizard.png
+    - data.emoji.pairs.1.initial.mode:patch
+    - data.emoji.pairs.1.initial.size:1
+    - data.emoji.pairs.1.target:lizard.png
+    - model.family:gNCA
+    - model.padding:REPLICATE
+    - run.repeat:1
+    - attractors:2
+evaluation_input:
+  schema_version: 1
+  kind: data_t0
+  initial_state:
+    sha256: b69df09896c1dd0a4a9bf863940913e1939dee5a5baa38163445d2b2b109cb40
+    shape:
+    - 2
+    - 4
+    - 120
+    - 120
+    dtype: <f4
