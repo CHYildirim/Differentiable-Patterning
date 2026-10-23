@@ -1,8 +1,8 @@
-experiment_name: multi_attractor_stability_sweep_v1
+experiment_name: multi_attractor_stability_sweep_v2
 
 entrypoint: Experiments.emoji.train:run
 
-output_subdir: generated/emoji_multi_attractor_outsource
+output_subdir: generated/emoji_multi_attractor_outsource2
 
 seed_mode: index
 
@@ -16,7 +16,7 @@ grid:
 
   logging.wandb.project: [NCA-emoji-multi-attractor]
 
-  model.family: [NCA]
+  model.family: [gNCA]
   # logging.wandb.tags: [[gNCA]]
 
   model.channels: [64]

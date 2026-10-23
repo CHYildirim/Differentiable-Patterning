@@ -26,6 +26,7 @@ __generated_with = "0.25.1"
 app = marimo.App(width="full")
 
 with app.setup(hide_code=True):
+    import itertools
     import math
     import os
     import zlib
@@ -41,6 +42,8 @@ with app.setup(hide_code=True):
     import traitlets
     from dotenv import load_dotenv
     from matplotlib.colors import ListedColormap
+    from matplotlib.lines import Line2D
+    from matplotlib.offsetbox import AnnotationBbox, OffsetImage
     from matplotlib.patches import Patch
 
     from Experiments.emoji import multi_attractor as ma
@@ -133,6 +136,150 @@ with app.setup(hide_code=True):
         fig.tight_layout()
         return fig
 
+    # Similarity space (velocity map): one axis per target. ``paths`` are dicts with
+    # label, colour, style and sim [rollout, step, target] (``ma.similarity``).
+    LINESTYLES = ("-", "--", ":", "-.")
+
+    def similarity_limits(paths, target_sim):
+        """Common axis range: from 0 (or lower, if a path goes there) to just past 1."""
+        values = np.concatenate([target_sim.ravel()] + [path["sim"].ravel() for path in paths])
+        values = values[np.isfinite(values)]
+        return (min(0.0, float(values.min())) if len(values) else 0.0) - 0.05, 1.1
+
+    def path_arrows(sim, stride):
+        """Start points and steps of arrows every ``stride`` steps along one path [step, target]."""
+        start = np.arange(0, len(sim) - 1, stride)
+        end = np.minimum(start + stride, len(sim) - 1)
+        return sim[start], sim[end] - sim[start]
+
+    def similarity_plane(ax, i, j, paths, target_sim, targets, names, stride, limits):
+        """The plane of targets i (x) and j (y); each target's image sits at the end of its axis."""
+        for path in paths:
+            for sim in path["sim"]:
+                ax.plot(sim[:, i], sim[:, j], color=path["colour"], ls=path["style"], lw=1, alpha=0.45)
+                at, step = path_arrows(sim, stride)
+                ax.quiver(at[:, i], at[:, j], step[:, i], step[:, j], angles="xy", scale_units="xy", scale=1,
+                          color=path["colour"], width=0.005, headwidth=4, headlength=5, headaxislength=4.5,
+                          minlength=0, zorder=3)
+                ax.scatter(sim[0, i], sim[0, j], s=55, color=path["colour"], edgecolor="black", zorder=4)
+                ax.scatter(sim[-1, i], sim[-1, j], s=45, marker="s", color=path["colour"], edgecolor="black",
+                           zorder=4)
+        for k, name in enumerate(names):
+            ax.scatter(target_sim[k, i], target_sim[k, j], marker="*", s=260, color=outcome_colour(k),
+                       edgecolor="black", lw=0.8, zorder=5)
+            ax.annotate(name, (target_sim[k, i], target_sim[k, j]), xytext=(7, 5), textcoords="offset points",
+                        fontsize=8)
+        for value in (0.0, 1.0):
+            ax.axvline(value, color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
+            ax.axhline(value, color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
+        ax.set_xlim(limits)
+        ax.set_ylim(limits)
+        ax.set_aspect("equal")
+        ax.set_xlabel(f"similarity to {names[i]}")
+        ax.set_ylabel(f"similarity to {names[j]}")
+        style_axes(ax)
+        # The target images at the ends of their axes: i right of the x axis, j on top of the y axis
+        zoom = 30 / targets.shape[-1]
+        for k, xy, align in ((i, (1.0, 0.0), (-0.15, 0.5)), (j, (0.0, 1.0), (0.5, -0.15))):
+            box = AnnotationBbox(OffsetImage(ma.to_image(targets[k]), zoom=zoom), xy, xycoords="axes fraction",
+                                 box_alignment=align, frameon=True, pad=0.1, annotation_clip=False,
+                                 bboxprops={"edgecolor": outcome_colour(k), "lw": 1.5})
+            ax.add_artist(box)
+
+    def similarity_space_3d(ax, paths, target_sim, names, stride, limits):
+        """The space of the first three targets."""
+        for path in paths:
+            for sim in path["sim"]:
+                ax.plot(sim[:, 0], sim[:, 1], sim[:, 2], color=path["colour"], ls=path["style"], lw=1, alpha=0.45)
+                at, step = path_arrows(sim, stride)
+                ax.quiver(at[:, 0], at[:, 1], at[:, 2], step[:, 0], step[:, 1], step[:, 2], color=path["colour"],
+                          arrow_length_ratio=0.3, linewidth=1.2)
+                ax.scatter(*sim[0, :3], s=55, color=path["colour"], edgecolor="black", depthshade=False)
+                ax.scatter(*sim[-1, :3], s=45, marker="s", color=path["colour"], edgecolor="black", depthshade=False)
+        for k, name in enumerate(names[:3]):
+            ax.scatter(*target_sim[k, :3], marker="*", s=260, color=outcome_colour(k), edgecolor="black",
+                       depthshade=False)
+            ax.text(*target_sim[k, :3], f"  {name}", fontsize=8)
+        ax.set_xlim(limits)
+        ax.set_ylim(limits)
+        ax.set_zlim(limits)
+        ax.set_xlabel(f"similarity to {names[0]}", fontsize=8)
+        ax.set_ylabel(f"similarity to {names[1]}", fontsize=8)
+        ax.set_zlabel(f"similarity to {names[2]}", fontsize=8)
+
+    # Colour of the start points that reach no stable attractor
+    NO_ATTRACTOR_COLOUR = "#9a9a9a"
+    # Path of the specific start point
+    SPECIAL_COLOUR = "#7b2cbf"
+
+    def start_basin_background(ax, plane, i, j, n_targets):
+        """Regions of start points in the plane of targets i and j, coloured by the stable
+        attractor they reach (grey: none), with their boundaries. ``plane`` has sim
+        [a, b, target] (similarity of each start point) and stable [a, b]."""
+        x, y, stable = plane["sim"][..., i], plane["sim"][..., j], plane["stable"]
+        for k in range(-1, n_targets):
+            region = (stable == k).astype(float)
+            if not region.any():
+                continue
+            colour = outcome_colour(k) if k >= 0 else NO_ATTRACTOR_COLOUR
+            # Filled where the region's indicator is above 1/2, outlined there
+            ax.contourf(x, y, region, levels=[0.5, 1.5], colors=[colour], alpha=0.28, zorder=0)
+            if region.min() == 0:
+                ax.contour(x, y, region, levels=[0.5], colors=[colour], linewidths=1.8, zorder=1)
+
+    def start_basin_legend(names):
+        return [Patch(color=outcome_colour(k), alpha=0.45, label=f"start → {name}") for k, name in enumerate(names)] + [
+            Patch(color=NO_ATTRACTOR_COLOUR, alpha=0.45, label="start → no stable attractor")]
+
+    def similarity_legend(paths):
+        handles = [Line2D([], [], color=path["colour"], ls=path["style"], label=path["label"]) for path in paths]
+        handles += [
+            Line2D([], [], marker="o", ls="", color="#888888", markeredgecolor="black", label="start signal"),
+            Line2D([], [], marker="s", ls="", color="#888888", markeredgecolor="black", label="end"),
+            Line2D([], [], marker="*", ls="", color="#888888", markeredgecolor="black", markersize=12,
+                   label="target image"),
+        ]
+        return handles
+
+    def _sides(first, second):
+        """Colours of the two sides of a boundary: a stable one first, None for an unstable side."""
+        first, second = (first, second) if first >= 0 else (second, first)
+        return outcome_colour(int(first)), (outcome_colour(int(second)) if second >= 0 else None)
+
+    def polar_boundary_lines(stable):
+        """Lines between cells of a polar basin grid [hue, saturation ring] whose stable
+        attractor (``ma.stable_attractor``, -1 = none) differs, for ``RGBCube.wheel_boundaries``.
+
+        Cell (i, j) spans hue i/n .. (i+1)/n and saturation j/m .. (j+1)/m. Hue wraps
+        around; a stable region at the rim is closed by an arc at saturation 1.
+        """
+        n, m = stable.shape
+        lines = []
+        for i in range(n):
+            for j in range(m):
+                here, ahead = stable[i, j], stable[(i + 1) % n, j]
+                if here != ahead and max(here, ahead) >= 0:
+                    lines.append([(i + 1) / n, j / m, (i + 1) / n, (j + 1) / m, *_sides(here, ahead)])
+                outside = stable[i, j + 1] if j + 1 < m else -1
+                if here != outside and max(here, outside) >= 0:
+                    lines.append([i / n, (j + 1) / m, (i + 1) / n, (j + 1) / m, *_sides(here, outside)])
+        return lines
+
+    def cube_boundary_faces(stable):
+        """Faces between neighbouring cells of an [n, n, n] RGB basin grid whose stable
+        attractor differs, for ``RGBCube.cube_boundaries``. The walls of the cube are left open."""
+        n = stable.shape[0]
+        faces = []
+        for axis in range(3):
+            lower = np.take(stable, range(n - 1), axis=axis)
+            upper = np.take(stable, range(1, n), axis=axis)
+            for index in np.argwhere((lower != upper) & (np.maximum(lower, upper) >= 0)):
+                centre = (index + 0.5) / n
+                centre[axis] = (index[axis] + 1) / n
+                faces.append([axis, *np.round(centre, 4).tolist(), 0.5 / n,
+                              *_sides(lower[tuple(index)], upper[tuple(index)])])
+        return faces
+
     class RGBCube(anywidget.AnyWidget):
         """A rotatable RGB cube: red, green (up) and blue along the axes, black at the origin.
 
@@ -146,6 +293,10 @@ with app.setup(hide_code=True):
         With ``wheel`` a hue-saturation wheel at the chosen value is drawn beside
         the cube (hue is the angle, 0 = red to the right, anticlockwise;
         saturation the distance from the centre). Both show and set the same colour.
+
+        ``wheel_boundaries`` and ``cube_boundaries`` outline the regions that reach
+        a stable attractor (see ``polar_boundary_lines`` and ``cube_boundary_faces``),
+        ``wheel_note`` says where the wheel's lines come from.
         """
 
         _esm = """
@@ -186,6 +337,25 @@ with app.setup(hide_code=True):
           // Name on the left when it would run off the canvas
           const width = context.measureText(name).width;
           outlined(context, name, x + 9 + width > context.canvas.width ? x - 9 - width : x + 9, y + 4);
+        }
+        // Boundary lines [path, colour, other colour or null]: a white halo, the region's colour, and
+        // dashes of the other side's colour where two stable regions meet. Layer by layer, so a
+        // halo never covers the neighbouring segment's line.
+        function boundaries(context, paths) {
+          context.lineCap = "round";
+          for (const [width, layer, dash] of [[4.5, () => "white", []], [2.5, (a) => a, []], [2.5, (a, b) => b, [4, 4]]]) {
+            context.setLineDash(dash);
+            context.lineWidth = width;
+            for (const [path, a, b] of paths) {
+              const stroke = layer(a, b);
+              if (!stroke) continue;
+              context.strokeStyle = stroke;
+              path();
+              context.stroke();
+            }
+          }
+          context.setLineDash([]);
+          context.lineCap = "butt";
         }
         function ring(context, x, y) {
           for (const [width, colour] of [[4, "white"], [2, "black"]]) {
@@ -240,7 +410,8 @@ with app.setup(hide_code=True):
             hsv[2] = v;
             ui.select(...hsvToRgb(...hsv));
           }, () => model.save_changes());
-          element.append(canvas, valueRow, caption("click or drag on the wheel, or click a dot"));
+          const note = caption("");
+          element.append(canvas, valueRow, caption("click or drag on the wheel, or click a dot"), note);
           let wheel = null, wheelValue = null;
 
           function sync() {
@@ -274,6 +445,20 @@ with app.setup(hide_code=True):
             context.clearRect(0, 0, size, size);
             context.putImageData(wheel, 0, 0);
             context.font = "11px sans-serif";
+            // Boundaries of the stable-attractor regions: [h0, s0, h1, s1, colour, other side's colour or null],
+            // an arc when s0 == s1, else a radial line
+            const paths = model.get("wheel_boundaries").map(([h0, s0, h1, s1, a, b]) => [() => {
+              context.beginPath();
+              if (s0 === s1) {
+                context.arc(centre, centre, s0 * radius, -2 * Math.PI * h0, -2 * Math.PI * h1, true);
+              } else {
+                context.moveTo(...position(h0, s0));
+                context.lineTo(...position(h1, s1));
+              }
+            }, a, b]);
+            boundaries(context, paths);
+            note.textContent = model.get("wheel_note");
+            note.style.display = note.textContent ? "" : "none";
             for (const m of model.get("markers")) {
               // Each seed at its own value
               const [x, y] = position(...rgbToHsv(m.r, m.g, m.b));
@@ -407,10 +592,35 @@ with app.setup(hide_code=True):
             for (const m of model.get("markers")) {
               projected.push({ kind: "marker", ...m, xyz: project(m.r, m.g, m.b) });
             }
+            // Boundaries of the stable-attractor regions: square faces between grid cells,
+            // [axis, r, g, b (face centre), half side, colour, other side's colour or null]
+            for (const [axis, r, g, b, half, colour, other] of model.get("cube_boundaries")) {
+              const u = (axis + 1) % 3, v = (axis + 2) % 3;
+              const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([du, dv]) => {
+                const p = [r, g, b];
+                p[u] += du * half;
+                p[v] += dv * half;
+                return project(...p);
+              });
+              projected.push({ kind: "face", corners, colour, other, xyz: project(r, g, b) });
+            }
             projected.sort((p, q) => p.xyz[2] - q.xyz[2]);
             for (const p of projected) {
               const [x, y] = p.xyz;
-              if (p.kind === "point") {
+              if (p.kind === "face") {
+                context.beginPath();
+                context.moveTo(p.corners[0][0], p.corners[0][1]);
+                for (const [cx, cy] of p.corners.slice(1)) context.lineTo(cx, cy);
+                context.closePath();
+                context.globalAlpha = 0.35;
+                context.fillStyle = p.colour;
+                context.fill();
+                context.globalAlpha = 0.8;
+                context.lineWidth = p.other ? 1.5 : 0.5;
+                context.strokeStyle = p.other ?? p.colour;
+                context.stroke();
+                context.globalAlpha = 1;
+              } else if (p.kind === "point") {
                 context.fillStyle = p.colour;
                 context.fillRect(x - side / 2, y - side / 2, side, side);
                 context.lineWidth = 0.5;
@@ -426,6 +636,7 @@ with app.setup(hide_code=True):
           function under(x, y) {
             // Nearest object drawn on top
             for (let i = projected.length - 1; i >= 0; i--) {
+              if (projected[i].kind === "face") continue;
               const p = projected[i], reach = p.kind === "marker" ? 8 : Math.max(4, model.get("point_size") / 2 + 1);
               if (Math.hypot(x - p.xyz[0], y - p.xyz[1]) < reach) return p;
             }
@@ -542,7 +753,10 @@ with app.setup(hide_code=True):
           function schedule() {
             if (frame === null) frame = requestAnimationFrame(drawAll);
           }
-          for (const name of ["r", "g", "b", "a", "markers", "points", "point_size"]) model.on(`change:${name}`, schedule);
+          for (const name of ["r", "g", "b", "a", "markers", "points", "point_size", "wheel_boundaries", "wheel_note",
+                              "cube_boundaries"]) {
+            model.on(`change:${name}`, schedule);
+          }
           drawAll();
         }
         export default { render };
@@ -560,6 +774,11 @@ with app.setup(hide_code=True):
         # Widgets with the same key share their rotation
         view_key = traitlets.Unicode("picker").tag(sync=True)
         wheel = traitlets.Bool(False).tag(sync=True)
+        # [[h0, s0, h1, s1, colour, other colour or None]]
+        wheel_boundaries = traitlets.List([]).tag(sync=True)
+        wheel_note = traitlets.Unicode("").tag(sync=True)
+        # [[axis, r, g, b, half side, colour, other colour or None]]
+        cube_boundaries = traitlets.List([]).tag(sync=True)
 
 
 @app.cell(hide_code=True)
@@ -963,6 +1182,12 @@ def _():
     - Wheel: click or drag; cube: drag to rotate, click a wall; in both, a dot selects that training seed colour
     - The red/green/blue/alpha sliders reach any colour, including the inside of the cube
     - Pixel seeds (`mode: pixel`) differ only in their hidden code, so their dots overlap; choose the code with *Hidden channels*
+    - Lines in the wheel and faces in the cube outline where a **stable attractor** is reached, as in
+      `spatial_position_scan_combined.py`: the state is classified after every step (closest target,
+      `INTERMEDIATE` when two targets each own ≥ 20 % of the live pixels, `NO_VISIBLE_PATTERN` when none is alive);
+      a colour counts when it ends on a target (`reaches_pure_attractor`), optionally also only when the state
+      has stopped changing (`converged_before_end`). The wheel's lines come from the hue × saturation basin map,
+      the cube's faces from the basin cube (both below; press their buttons first)
     """)
     return
 
@@ -1040,9 +1265,24 @@ def _(explore_names, explore_pair_target, explore_seeds, seed_rgba):
                                  label="Hidden channels")
     explore_length = mo.ui.slider(1, 8, value=3, step=1, label="Length (× run.t)", show_value=True)
     explore_repeats = mo.ui.number(1, 32, value=1, step=1, label="Rollouts")
-    _controls = [explore_length, explore_repeats] + ([hidden_base] if _has_hidden else [])
+    stable_rule = mo.ui.dropdown(
+        {"ends on a target (reaches_pure_attractor)": False,
+         "… and has settled (converged_before_end)": True},
+        value="ends on a target (reaches_pure_attractor)", label="Stable attractor",
+    )
+    show_boundaries = mo.ui.checkbox(value=True, label="Draw stable-attractor boundaries")
+    _controls = [explore_length, explore_repeats] + ([hidden_base] if _has_hidden else []) + [stable_rule,
+                                                                                              show_boundaries]
     mo.hstack([picker, mo.vstack(_controls)], justify="start", align="start", gap=2)
-    return explore_length, explore_repeats, hidden_base, picker, seed_markers
+    return (
+        explore_length,
+        explore_repeats,
+        hidden_base,
+        picker,
+        seed_markers,
+        show_boundaries,
+        stable_rule,
+    )
 
 
 @app.cell(hide_code=True)
@@ -1069,17 +1309,27 @@ def _(
     memory_budget,
     parameter_noise,
     picker,
+    stable_rule,
     tolerance,
 ):
     _rgba = np.array([[picker.value[_name] for _name in ("r", "g", "b", "a")]], dtype=np.float32)
     _states = np.repeat(ma.coloured_seeds(base_seed, explore_footprint, _rgba), explore_repeats.value, axis=0)
     _steps = explore_length.value * explore_cfg.run.t
     _n_frames = math.gcd(_steps, 8)
-    _distances, _trajectory = ma.rollout(get_model(explore_id, parameter_noise.value), _states, explore_targets,
-                                         _steps, jr.PRNGKey(eval_seed.value), frames=_n_frames,
-                                         memory_gb=memory_budget.value)
+    _distances, _trajectory, _classes, _changes = ma.rollout(
+        get_model(explore_id, parameter_noise.value), _states, explore_targets, _steps, jr.PRNGKey(eval_seed.value),
+        frames=_n_frames, memory_gb=memory_budget.value, dynamics=True,
+    )
     _threshold = tolerance.value * explore_threshold_base
     _labels = ma.classify(_distances[:, -1], _trajectory[:, -1], _threshold)
+    _dynamics = ma.attractor_dynamics(_classes, _changes, len(explore_names))
+    _stable = ma.stable_attractor(_dynamics, settled=stable_rule.value)
+
+    def _stable_text(_r):
+        if _stable[_r] >= 0:
+            return f"stable {explore_names[_stable[_r]]} from step {_dynamics['steps_to_attractor'][_r]}"
+        _final = ma.scan_class_name(_dynamics["final_class"][_r], explore_names)
+        return f"not stable ({_final}{', unsettled' if _dynamics['reaches_attractor'][_r] else ''})"
 
     _frames = np.arange(_n_frames + 1) * (_steps // _n_frames)
     _columns = max(len(_frames), explore_repeats.value)
@@ -1090,7 +1340,8 @@ def _(
     for _r in range(explore_repeats.value):
         _label = int(_labels[_r])
         show_image(_fig.add_subplot(_grid[1, _r]), _trajectory[_r, -1],
-                   f"rollout {_r}: {ma.outcome_name(_label, explore_names)}", outcome_colour(_label))
+                   f"rollout {_r}: {ma.outcome_name(_label, explore_names)}\n{_stable_text(_r)}",
+                   outcome_colour(_label))
     _ax = _fig.add_subplot(_grid[2, :])
     for _k, _name in enumerate(explore_names):
         _ax.plot(_distances[:, :, _k].T, color=outcome_colour(_k), lw=1, alpha=0.6)
@@ -1105,6 +1356,313 @@ def _(
     _fig.suptitle(f"seed RGBA {np.round(_rgba[0], 3).tolist()}: rollout 0 (top), end of every rollout (middle)",
                   fontsize=9)
     _fig.tight_layout()
+    # Distances of every rollout of the chosen colour after every step, for the velocity map
+    chosen_distances = _distances
+    _fig
+    return (chosen_distances,)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### Velocity map
+
+    - Every state is placed by its similarity to each target: one axis per target, from 0 (as far from that
+      target as an empty grid) to 1 (identical to the target image, shown at the end of its axis).
+      Similarity = 1 − RGBA MSE to the target / RGBA MSE of an empty grid to it
+    - Stars: where the target images themselves lie. Each path starts (circle) at its start signal, i.e. the seed
+      used for the rollout, and ends (square) after *Length* × `run.t` steps; *Rollouts* paths per start
+    - Arrows: the movement over *arrow spacing* steps, so a long arrow means fast. The graph below shows the
+      similarity to the end attractor (the target closest at the end) and its velocity per step
+    - 2 targets: one plane; 3 targets: a 3D view and its three planes; more: the plane of every pair of targets
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(explore_names, explore_pair_target, explore_seeds):
+    _options = {f"seed {_pair} → {explore_names[int(explore_pair_target[_pair])]}": _pair
+                for _pair in range(len(explore_seeds))}
+    _options["chosen colour"] = -1
+    _options["specific start point"] = -2
+    velocity_starts = mo.ui.multiselect(_options, value=list(_options)[:-1], label="Start signals")
+    velocity_stride = mo.ui.slider(1, 32, value=8, step=1, label="Arrow spacing (steps)", show_value=True)
+    velocity_smooth = mo.ui.slider(1, 32, value=8, step=1, label="Velocity smoothing (steps)", show_value=True)
+    velocity_background = mo.ui.checkbox(value=False, label="Start-point basins as background")
+    mo.hstack([velocity_starts, velocity_stride, velocity_smooth, velocity_background], justify="start", gap=1.5,
+              wrap=True)
+    return velocity_background, velocity_smooth, velocity_starts, velocity_stride
+
+
+@app.cell(hide_code=True)
+def _(
+    eval_seed,
+    explore_cfg,
+    explore_id,
+    explore_length,
+    explore_repeats,
+    explore_seeds,
+    explore_targets,
+    get_model,
+    memory_budget,
+    parameter_noise,
+):
+    # Every training seed (with its hidden channels, as in training), rolled out like the chosen colour
+    _distances, _ = ma.rollout(
+        get_model(explore_id, parameter_noise.value), np.repeat(explore_seeds, explore_repeats.value, axis=0),
+        explore_targets, explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
+        memory_gb=memory_budget.value,
+    )
+    # [pair, rollout, step, target]
+    seed_distances = _distances.reshape(len(explore_seeds), explore_repeats.value, *_distances.shape[1:])
+    return (seed_distances,)
+
+
+@app.cell(hide_code=True)
+def _(
+    chosen_distances,
+    explore_cfg,
+    explore_names,
+    explore_pair_target,
+    explore_targets,
+    seed_distances,
+    special_distances,
+    start_planes,
+    velocity_background,
+    velocity_smooth,
+    velocity_starts,
+    velocity_stride,
+):
+    _paths = []
+    for _start in velocity_starts.value:
+        if _start == -1:
+            _label, _colour, _distances = "chosen colour", "black", chosen_distances
+        elif _start == -2:
+            _label, _colour, _distances = "specific start point", SPECIAL_COLOUR, special_distances
+        else:
+            _label = f"seed {_start} → {explore_names[int(explore_pair_target[_start])]}"
+            _colour, _distances = outcome_colour(int(explore_pair_target[_start])), seed_distances[_start]
+        _paths.append({"label": _label, "colour": _colour, "style": LINESTYLES[len(_paths) % len(LINESTYLES)],
+                       "sim": ma.similarity(_distances, explore_targets)})
+    mo.stop(not _paths, mo.md("Choose at least one start signal."))
+
+    _n = len(explore_names)
+    _target_sim = ma.target_similarity(explore_targets)
+    _background = start_planes if velocity_background.value else None
+    _limits = similarity_limits(_paths + [{"sim": _plane["sim"]} for _plane in _background or []], _target_sim)
+    _stride = velocity_stride.value
+    _planes = list(itertools.combinations(range(_n), 2))
+    _figures = []
+    if velocity_background.value and start_planes is None:
+        _figures.append(mo.callout("For the background, compute the start-point basins below.", kind="neutral"))
+    if _n == 3:
+        _fig3d = plt.figure(figsize=(8.0, 5.8))
+        similarity_space_3d(_fig3d.add_subplot(projection="3d"), _paths, _target_sim, explore_names, _stride,
+                            _limits)
+        _fig3d.subplots_adjust(left=0.0, right=0.72, bottom=0.02, top=0.98)
+        _fig3d.legend(handles=similarity_legend(_paths), loc="center left", bbox_to_anchor=(0.74, 0.5),
+                      frameon=False, fontsize=8)
+        _figures.append(_fig3d)
+    _columns = min(3, len(_planes))
+    _rows = math.ceil(len(_planes) / _columns)
+    _width = 4.8 * _columns + 2.2
+    _fig, _axes = plt.subplots(_rows, _columns, figsize=(_width, 4.8 * _rows), squeeze=False)
+    for _k, (_ax, (_i, _j)) in enumerate(zip(_axes.flat, _planes)):
+        if _background:
+            start_basin_background(_ax, _background[_k], _i, _j, _n)
+        similarity_plane(_ax, _i, _j, _paths, _target_sim, explore_targets, explore_names, _stride, _limits)
+    for _ax in _axes.flat[len(_planes):]:
+        _ax.axis("off")
+    # The legend in a margin on the right
+    _fig.tight_layout(rect=(0, 0, 1 - 2.2 / _width, 1), w_pad=4, h_pad=3)
+    _fig.legend(handles=similarity_legend(_paths) + (start_basin_legend(explore_names) if _background else []),
+                loc="center left", bbox_to_anchor=(1 - 2.1 / _width, 0.5), frameon=False, fontsize=8)
+    _figures.append(_fig)
+
+    # Similarity to the end attractor (the closest target at the end) and its velocity per step
+    _fig_v, (_ax_s, _ax_v) = plt.subplots(1, 2, figsize=(12, 3.8))
+    for _path in _paths:
+        for _r, _sim in enumerate(_path["sim"]):
+            _end = int(np.nanargmax(_sim[-1])) if np.isfinite(_sim[-1]).any() else 0
+            _towards = _sim[:, _end]
+            _velocity = ma.moving_average(np.diff(_towards), velocity_smooth.value)
+            _label = f"{_path['label']} (ends: {explore_names[_end]})" if _r == 0 else None
+            _ax_s.plot(np.arange(len(_towards)), _towards, color=_path["colour"], ls=_path["style"], lw=1.2,
+                       label=_label)
+            _ax_v.plot(np.arange(1, len(_towards)), _velocity, color=_path["colour"], ls=_path["style"], lw=1.2)
+    _ax_s.axhline(1.0, color="#999", ls="--", lw=0.8)
+    _ax_s.set_ylabel("similarity to end attractor")
+    _ax_v.axhline(0.0, color="#999", lw=0.8)
+    _ax_v.set_ylabel("velocity towards end attractor\n(Δ similarity per step)")
+    for _ax in (_ax_s, _ax_v):
+        _ax.axvline(explore_cfg.run.t, color="#999", ls=":", lw=1)
+        _ax.set_xlabel("step")
+        style_axes(_ax)
+    _ax_s.legend(frameon=False, fontsize=8)
+    _ax_v.set_title(f"moving average over {velocity_smooth.value} steps; dotted: run.t", fontsize=9)
+    _fig_v.tight_layout()
+    mo.vstack([mo.hstack(_figures, justify="start", align="start", wrap=True), _fig_v])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### Start-point basins
+
+    - Which start points in the similarity space lead to which stable attractor (criterion above)?
+    - Start points are mixtures of two target images and the empty grid: weight *a* of the x target plus *b* of
+      the y target with *a* + *b* ≤ 1, so they fill the area between the empty grid (0, 0) and the two target images
+      (*grid steps* along the total amount and along the share of the y target; hidden channels from
+      *Hidden channels*). Each is rolled out once for *Length* × `run.t` steps and placed at its own similarity;
+      the shaded region and its outline show the attractor it reaches, grey = none
+    - One plane per pair of targets, as in the velocity map; other targets have weight 0 there
+    - The *specific start point* mixes all targets with the weights below; its path is drawn on top, and it can be
+      added to the velocity map as a start signal. The velocity map can show these regions as its background
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(explore_names):
+    start_steps = mo.ui.number(3, 41, value=15, step=1, label="Grid steps per target")
+    start_run = mo.ui.run_button(label="Compute start-point basins")
+    start_weights = mo.ui.array(
+        [mo.ui.slider(0.0, 1.0, value=0.3, step=0.05, label=f"weight of {_name}", show_value=True)
+         for _name in explore_names],
+        label="Specific start point",
+    )
+    mo.hstack([mo.vstack([start_steps, start_run]), start_weights], justify="start", align="start", gap=2)
+    return start_run, start_steps, start_weights
+
+
+@app.cell
+def _():
+    # Start-point basins computed in this session, keyed by their settings
+    start_cache = {}
+    return (start_cache,)
+
+
+@app.cell(hide_code=True)
+def _(
+    base_seed,
+    eval_seed,
+    explore_cfg,
+    explore_id,
+    explore_length,
+    explore_targets,
+    get_model,
+    hidden_base,
+    memory_budget,
+    parameter_noise,
+    start_cache,
+    start_run,
+    start_steps,
+):
+    _key = (explore_id, parameter_noise.value, start_steps.value, explore_length.value, hidden_base.value,
+            eval_seed.value)
+    _pairs = list(itertools.combinations(range(len(explore_targets)), 2))
+    if start_run.value and _key not in start_cache:
+        # Amount u of target image in total and share v of it from the y target:
+        # weights a = u (1 - v), b = u v, so a + b <= 1 and the rest is empty grid
+        _grid = np.linspace(0.0, 1.0, start_steps.value)
+        _u, _v = np.meshgrid(_grid, _grid, indexing="ij")
+        _weights = []
+        for _i, _j in _pairs:
+            _w = np.zeros((_u.size, len(explore_targets)), np.float32)
+            _w[:, _i], _w[:, _j] = (_u * (1 - _v)).ravel(), (_u * _v).ravel()
+            _weights.append(_w)
+        _states = ma.mixed_states(base_seed, explore_targets, np.concatenate(_weights))
+        with mo.status.spinner(f"Rolling out {len(_states)} start points"):
+            _distances, _, _classes, _changes = ma.rollout(
+                get_model(explore_id, parameter_noise.value), _states, explore_targets,
+                explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
+                memory_gb=memory_budget.value, dynamics=True,
+            )
+        start_cache[_key] = {
+            "pairs": _pairs, "shape": _u.shape,
+            # Similarity of each start point, [start, target]
+            "sim": ma.similarity(_distances[:, 0], explore_targets),
+            "dynamics": ma.attractor_dynamics(_classes, _changes, len(explore_targets)),
+        }
+    # None until computed for these settings
+    start_basin = start_cache.get(_key)
+    mo.md(f"Press **Compute start-point basins** ({len(_pairs) * start_steps.value ** 2} rollouts; uses the "
+          "length, hidden channels, noise and memory settings above).") if start_basin is None else None
+    return (start_basin,)
+
+
+@app.cell(hide_code=True)
+def _(start_basin, stable_rule):
+    # One plane per pair of targets: similarity [a, b, target] and stable attractor [a, b] of each start point
+    start_planes = None
+    if start_basin is not None:
+        _stable = ma.stable_attractor(start_basin["dynamics"], settled=stable_rule.value)
+        _size = int(np.prod(start_basin["shape"]))
+        start_planes = [
+            {"pair": _pair,
+             "sim": start_basin["sim"][_k * _size:(_k + 1) * _size].reshape(*start_basin["shape"], -1),
+             "stable": _stable[_k * _size:(_k + 1) * _size].reshape(start_basin["shape"])}
+            for _k, _pair in enumerate(start_basin["pairs"])
+        ]
+    return (start_planes,)
+
+
+@app.cell(hide_code=True)
+def _(
+    base_seed,
+    eval_seed,
+    explore_cfg,
+    explore_id,
+    explore_length,
+    explore_repeats,
+    explore_targets,
+    get_model,
+    memory_budget,
+    parameter_noise,
+    start_weights,
+):
+    # The specific start point, rolled out like the chosen colour: distances [rollout, step, target]
+    _state = ma.mixed_states(base_seed, explore_targets, [start_weights.value])
+    special_distances, _ = ma.rollout(
+        get_model(explore_id, parameter_noise.value), np.repeat(_state, explore_repeats.value, axis=0),
+        explore_targets, explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
+        memory_gb=memory_budget.value,
+    )
+    return (special_distances,)
+
+
+@app.cell(hide_code=True)
+def _(
+    explore_names,
+    explore_targets,
+    special_distances,
+    start_planes,
+    start_weights,
+    velocity_stride,
+):
+    mo.stop(start_planes is None)
+    _n = len(explore_names)
+    _special = {"label": "specific start point", "colour": SPECIAL_COLOUR, "style": "-",
+                "sim": ma.similarity(special_distances, explore_targets)}
+    _target_sim = ma.target_similarity(explore_targets)
+    _limits = similarity_limits([_special] + [{"sim": _plane["sim"]} for _plane in start_planes], _target_sim)
+    _columns = min(3, len(start_planes))
+    _rows = math.ceil(len(start_planes) / _columns)
+    _width = 4.8 * _columns + 2.4
+    _fig, _axes = plt.subplots(_rows, _columns, figsize=(_width, 4.8 * _rows), squeeze=False)
+    for _ax, _plane in zip(_axes.flat, start_planes):
+        _i, _j = _plane["pair"]
+        start_basin_background(_ax, _plane, _i, _j, _n)
+        similarity_plane(_ax, _i, _j, [_special], _target_sim, explore_targets, explore_names,
+                         velocity_stride.value, _limits)
+    for _ax in _axes.flat[len(start_planes):]:
+        _ax.axis("off")
+    _fig.tight_layout(rect=(0, 0, 1 - 2.4 / _width, 1), w_pad=4, h_pad=3)
+    _fig.legend(handles=start_basin_legend(explore_names) + similarity_legend([_special]), loc="center left",
+                bbox_to_anchor=(1 - 2.3 / _width, 0.5), frameon=False, fontsize=8)
+    _weights = ", ".join(f"{_name} {_w:.2f}" for _name, _w in zip(explore_names, start_weights.value))
+    _fig.suptitle(f"start-point basins; specific start point: {_weights}", fontsize=9, y=1.0)
     _fig
     return
 
@@ -1117,6 +1675,8 @@ def _():
     - One rollout per colour on a polar grid: angle = hue, radius = saturation (or value), the other fixed
     - Left: which target each colour grows into; right: error to the closest target
     - Dots are training seeds (drawn at their own value), the ring is the colour chosen above
+    - Coloured lines outline where a stable attractor is reached (criterion above); a hue × saturation map also
+      draws them into the wheel
     """)
     return
 
@@ -1181,21 +1741,51 @@ def _(
         _hsva = np.stack([_h, _s, _v, np.full_like(_h, basin_alpha.value)], axis=-1).reshape(-1, 4)
         _states = ma.coloured_seeds(base_seed, explore_footprint, ma.hsva_to_rgba(_hsva))
         with mo.status.spinner(f"Rolling out {len(_states)} seed colours"):
-            _distances, _rgba = ma.rollout(
+            _distances, _rgba, _classes, _changes = ma.rollout(
                 get_model(explore_id, parameter_noise.value), _states, explore_targets,
                 explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
-                memory_gb=memory_budget.value,
+                memory_gb=memory_budget.value, dynamics=True,
             )
-        basin_cache[_key] = {"shape": _h.shape, "distances": _distances[:, -1], "final": _rgba[:, -1], "hsva": _hsva}
-    mo.stop(_key not in basin_cache, mo.md("Press **Compute basin map** (uses the length, hidden channels, noise and memory settings above)."))
-    basin = basin_cache[_key]
+        basin_cache[_key] = {
+            "shape": _h.shape, "distances": _distances[:, -1], "final": _rgba[:, -1], "hsva": _hsva,
+            "dynamics": ma.attractor_dynamics(_classes, _changes, len(explore_targets)),
+            "slice": basin_slice.value, "fixed": basin_fixed.value, "alpha": basin_alpha.value,
+        }
+    # None until computed for these settings (the wheel's boundaries are then cleared)
+    basin = basin_cache.get(_key)
+    mo.md("Press **Compute basin map** (uses the length, hidden channels, noise and memory settings above)."
+          ) if basin is None else None
     return (basin,)
+
+
+@app.cell(hide_code=True)
+def _(basin, show_boundaries, stable_rule):
+    # Stable attractor of each basin-map colour (-1 = none) and the boundaries of those regions:
+    # basin_lines for the polar maps, wheel_lines for the wheel (only a hue × saturation slice matches it)
+    basin_stable = None
+    basin_lines, wheel_lines, wheel_note = [], [], ""
+    if basin is None:
+        if show_boundaries.value:
+            wheel_note = "Boundaries: compute the hue × saturation basin map below."
+    else:
+        basin_stable = ma.stable_attractor(basin["dynamics"], settled=stable_rule.value).reshape(basin["shape"])
+        if show_boundaries.value:
+            basin_lines = polar_boundary_lines(basin_stable)
+            if basin["slice"] == "s":
+                wheel_lines = basin_lines
+                wheel_note = (f"Boundaries: stable attractors in the basin map at V {basin['fixed']:.2f}, "
+                              f"A {basin['alpha']:.2f}.")
+            else:
+                wheel_note = "Boundaries: need a hue × saturation basin map (this one is hue × value)."
+    return basin_lines, basin_stable, wheel_lines, wheel_note
 
 
 @app.cell(hide_code=True)
 def _(
     basin,
+    basin_lines,
     basin_slice,
+    basin_stable,
     explore_names,
     explore_pair_target,
     explore_threshold_base,
@@ -1203,6 +1793,7 @@ def _(
     seed_rgba,
     tolerance,
 ):
+    mo.stop(basin is None)
     _threshold = tolerance.value * explore_threshold_base
     _labels = ma.classify(basin["distances"], basin["final"], _threshold)
     _shape = basin["shape"]
@@ -1223,6 +1814,13 @@ def _(
     _seed_hsva = ma.rgba_to_hsva(seed_rgba)
     _chosen = ma.rgba_to_hsva([picker.value[_name] for _name in ("r", "g", "b", "a")])
     for _ax in _axes:
+        # Stable-attractor boundaries, in the colour of the stable side
+        for _h0, _s0, _h1, _s1, _colour, _other in basin_lines:
+            _t = np.linspace(_h0, _h1, 8) if _s0 == _s1 else np.array([_h0, _h1])
+            _ax.plot(2 * np.pi * _t, np.linspace(_s0, _s1, len(_t)), color="white", lw=3.2, zorder=2,
+                     solid_capstyle="round")
+            _ax.plot(2 * np.pi * _t, np.linspace(_s0, _s1, len(_t)), color=_colour, lw=1.6, zorder=2,
+                     solid_capstyle="round")
         for _pair, _colour in enumerate(_seed_hsva):
             _ax.scatter(2 * np.pi * _colour[0], _colour[_radial_index], s=60, zorder=3,
                         color=outcome_colour(int(explore_pair_target[_pair])), edgecolor="black", lw=1.5)
@@ -1244,9 +1842,14 @@ def _(
     _fig2 = outcome_gallery(_labels, basin["final"], _captions, explore_names)
 
     _counts = {ma.outcome_name(_label, explore_names): int(np.sum(_labels == _label)) for _label in _present}
+    _stable_counts = ", ".join(
+        f"{explore_names[_k] if _k >= 0 else 'none'} **{int(np.sum(basin_stable == _k))}**"
+        for _k in [*range(len(explore_names)), -1]
+    )
     mo.vstack([
         _fig,
-        mo.md("Outcome counts: " + ", ".join(f"{_name} **{_count}**" for _name, _count in _counts.items())),
+        mo.md("Outcome counts: " + ", ".join(f"{_name} **{_count}**" for _name, _count in _counts.items())
+              + f"<br>Stable attractor (lines): {_stable_counts}"),
         mo.accordion({"Final states by outcome": _fig2}),
     ])
     return
@@ -1260,6 +1863,8 @@ def _():
     - One rollout per colour on a regular grid in the RGB cube, at a fixed alpha
     - Each square is coloured by the target its colour grows into; hover a square for its colour and outcome
     - Dots are training seeds, the ring is the colour chosen above; untick outcomes to look behind them
+    - Translucent faces separate cells with a different stable attractor (criterion above), in the stable side's
+      colour; where two stable regions meet, the edge has the other one's colour. The same faces appear in the picker
     """)
     return
 
@@ -1307,21 +1912,47 @@ def _(
         _colours = _colours.astype(np.float32)
         _states = ma.coloured_seeds(base_seed, explore_footprint, _colours)
         with mo.status.spinner(f"Rolling out {len(_states)} seed colours"):
-            _distances, _rgba = ma.rollout(
+            _distances, _rgba, _classes, _changes = ma.rollout(
                 get_model(explore_id, parameter_noise.value), _states, explore_targets,
                 explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
-                memory_gb=memory_budget.value,
+                memory_gb=memory_budget.value, dynamics=True,
             )
-        cube_cache[_key] = {"distances": _distances[:, -1], "final": _rgba[:, -1], "rgba": _colours}
-    mo.stop(_key not in cube_cache, mo.md(
-        f"Press **Compute basin cube** ({cube_steps.value ** 3} rollouts; uses the length, hidden channels, "
-        "noise and memory settings above)."))
-    basin_cube = cube_cache[_key]
+        cube_cache[_key] = {
+            "distances": _distances[:, -1], "final": _rgba[:, -1], "rgba": _colours, "steps": cube_steps.value,
+            "dynamics": ma.attractor_dynamics(_classes, _changes, len(explore_targets)),
+        }
+    # None until computed for these settings (the cube's boundaries are then cleared)
+    basin_cube = cube_cache.get(_key)
+    mo.md(f"Press **Compute basin cube** ({cube_steps.value ** 3} rollouts; uses the length, hidden channels, "
+          "noise and memory settings above).") if basin_cube is None else None
     return (basin_cube,)
 
 
 @app.cell(hide_code=True)
+def _(basin_cube, show_boundaries, stable_rule):
+    # Stable attractor of each basin-cube colour (-1 = none) and the faces between those regions
+    cube_stable, cube_faces = None, []
+    if basin_cube is not None:
+        _n = basin_cube["steps"]
+        cube_stable = ma.stable_attractor(basin_cube["dynamics"], settled=stable_rule.value).reshape(_n, _n, _n)
+        if show_boundaries.value:
+            cube_faces = cube_boundary_faces(cube_stable)
+    return cube_faces, cube_stable
+
+
+@app.cell(hide_code=True)
+def _(cube_faces, picker, wheel_lines, wheel_note):
+    # Boundaries into the picker. They are set on the widget, so they reach the page without
+    # re-creating it, and choosing a colour does not send them back.
+    picker.widget.wheel_boundaries = wheel_lines
+    picker.widget.wheel_note = wheel_note
+    picker.widget.cube_boundaries = cube_faces
+    return
+
+
+@app.cell(hide_code=True)
 def _(basin_cube, explore_names, explore_threshold_base, tolerance):
+    mo.stop(basin_cube is None)
     cube_labels = ma.classify(basin_cube["distances"], basin_cube["final"], tolerance.value * explore_threshold_base)
     _present = [ma.outcome_name(int(_label), explore_names) for _label in np.unique(cube_labels)]
     cube_show = mo.ui.multiselect(_present, value=_present, label="Show outcomes")
@@ -1331,7 +1962,17 @@ def _(basin_cube, explore_names, explore_threshold_base, tolerance):
 
 
 @app.cell(hide_code=True)
-def _(basin_cube, cube_labels, cube_show, cube_size, explore_names, picker, seed_markers):
+def _(
+    basin_cube,
+    cube_faces,
+    cube_labels,
+    cube_show,
+    cube_size,
+    cube_stable,
+    explore_names,
+    picker,
+    seed_markers,
+):
     _names = [ma.outcome_name(int(_label), explore_names) for _label in cube_labels]
     _points = [
         [round(float(_r), 3), round(float(_g), 3), round(float(_b), 3), outcome_colour(int(_label)), _name]
@@ -1341,6 +1982,7 @@ def _(basin_cube, cube_labels, cube_show, cube_size, explore_names, picker, seed
     _view = mo.ui.anywidget(RGBCube(
         r=picker.value["r"], g=picker.value["g"], b=picker.value["b"], a=picker.value["a"], markers=seed_markers,
         points=_points, point_size=float(cube_size.value), pickable=False, view_key="basin",
+        cube_boundaries=cube_faces,
     ))
 
     _present = [int(_label) for _label in np.unique(cube_labels)]
@@ -1352,8 +1994,14 @@ def _(basin_cube, cube_labels, cube_show, cube_size, explore_names, picker, seed
     )
     _captions = [f"R{_r:.2f} G{_g:.2f} B{_b:.2f}" for _r, _g, _b, _a in basin_cube["rgba"]]
     _gallery = outcome_gallery(cube_labels, basin_cube["final"], _captions, explore_names)
+    _stable_counts = "<br>".join(
+        f"{explore_names[_k] if _k >= 0 else 'none'} **{int(np.sum(cube_stable == _k))}**"
+        for _k in [*range(len(explore_names)), -1]
+    )
     mo.vstack([
-        mo.hstack([_view, mo.md(f"Outcome counts:<br>{_legend}")], justify="start", align="start", gap=2),
+        mo.hstack([_view, mo.md(f"Outcome counts (squares):<br>{_legend}<br><br>"
+                                f"Stable attractor (faces):<br>{_stable_counts}")],
+                  justify="start", align="start", gap=2),
         mo.accordion({"Final states by outcome": _gallery}),
     ])
     return
