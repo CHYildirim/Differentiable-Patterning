@@ -850,8 +850,12 @@ def _():
 def _(runs):
     mo.stop(len(runs) == 0, mo.callout("No multi-attractor bundles found in this model store.", kind="warn"))
 
+    def _label(value):
+        # pandas 3: astype(str) keeps missing values as NaN, which breaks sorting
+        return "None" if value is None or (isinstance(value, float) and value != value) else str(value)
+
     def _choice(column, label):
-        _options = sorted(set(runs[column].astype(str)))
+        _options = sorted(set(runs[column].map(_label)))
         return mo.ui.multiselect(_options, value=_options, label=label)
 
     _emojis = sorted({_name for _targets in runs.targets for _name in _targets.split(" + ")})
@@ -876,8 +880,12 @@ def _(runs):
 @app.cell(hide_code=True)
 def _(model_filters, runs, target_filter, text_filter):
     _keep = np.ones(len(runs), dtype=bool)
+    def _label(value):
+        # pandas 3: astype(str) keeps missing values as NaN, which breaks sorting
+        return "None" if value is None or (isinstance(value, float) and value != value) else str(value)
+
     for _column, _values in model_filters.value.items():
-        _keep &= runs[_column].astype(str).isin(_values).to_numpy()
+        _keep &= runs[_column].map(_label).isin(_values).to_numpy()
     for _name in target_filter.value:
         _keep &= runs.targets.apply(lambda _targets: _name in _targets.split(" + ")).to_numpy()
     if text_filter.value.strip():

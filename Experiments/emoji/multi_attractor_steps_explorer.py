@@ -52,7 +52,7 @@ with app.setup(hide_code=True):
     import pandas as pd
     import traitlets
     from dotenv import load_dotenv
-    from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_hex
+    from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_hex, to_rgb
     from matplotlib.lines import Line2D
     from matplotlib.offsetbox import AnnotationBbox, OffsetImage
     from matplotlib.patches import Patch
@@ -148,8 +148,51 @@ with app.setup(hide_code=True):
         return fig
 
     # Similarity space (velocity map): one axis per target. ``paths`` are dicts with
-    # label, colour, style and sim [rollout, step, target] (``ma.similarity``).
+    # label, colour, style and sim [rollout, step, target] (``ma.similarity``); with
+    # "small": True a path is drawn thin, with small markers and a dark outline (the many
+    # start colours between the trained seeds).
     LINESTYLES = ("-", "--", ":", "-.")
+
+    def symlog(values, c):
+        """Symmetric logarithm sign(x) log10(1 + |x| / c): linear for |x| << c, logarithmic beyond."""
+        values = np.asarray(values, dtype=float)
+        return np.sign(values) * np.log10(1.0 + np.abs(values) / c)
+
+    def start_log_axes(paths, magnify):
+        """Log axes around the start points: for every target k, (centre, c) with centre the middle of
+        the start points' similarities to k and c their spread / ``magnify``. An axis then shows
+        symlog(similarity - centre, c): the start points spread over its middle (about ±log10(magnify / 2)
+        decades), and further away it is logarithmic, so the whole paths still fit."""
+        starts = np.concatenate([path["sim"][:, 0, :] for path in paths], axis=0)
+        axes = {}
+        for k in range(starts.shape[1]):
+            values = starts[:, k][np.isfinite(starts[:, k])]
+            if not values.size:
+                axes[k] = (0.0, 1e-4)
+                continue
+            centre = float(values.min() + values.max()) / 2
+            spread = float(values.max() - values.min())
+            c = spread / magnify if spread > 0 else max(abs(centre), 1e-6) / magnify
+            axes[k] = (centre, max(c, 1e-12))
+        return axes
+
+    def offset_ticks(low, high, centre, c):
+        """Ticks of a start-centred log axis for similarities from low to high: the centre (0) and
+        offsets ±10^m from it, one per decade (every second one when there are many)."""
+        top = max(abs(high - centre), abs(low - centre))
+        decades = ([10.0 ** m for m in range(math.ceil(math.log10(c)), math.floor(math.log10(top)) + 1)]
+                   if top > c else [])
+        if len(decades) > 6:
+            decades = decades[::-1][::2][::-1]
+        offsets = [d for d in sorted({0.0, *decades, *[-d for d in decades]}) if low <= centre + d <= high]
+
+        def label(offset):
+            if offset == 0:
+                return "0"
+            power = round(math.log10(abs(offset)))
+            return ("+" if offset > 0 else "−") + (f"{10.0 ** power:g}" if power >= -2 else f"1e{power}")
+
+        return symlog(offsets, c), [label(offset) for offset in offsets]
 
     def similarity_limits(paths, target_sim):
         """Common axis range: from 0 (or lower, if a path goes there) to just past 1."""
@@ -163,31 +206,65 @@ with app.setup(hide_code=True):
         end = np.minimum(start + stride, len(sim) - 1)
         return sim[start], sim[end] - sim[start]
 
-    def similarity_plane(ax, i, j, paths, target_sim, targets, names, stride, limits):
-        """The plane of targets i (x) and j (y); each target's image sits at the end of its axis."""
+    def similarity_plane(ax, i, j, paths, target_sim, targets, names, stride, limits, log=None):
+        """The plane of targets i (x) and j (y); each target's image sits at the end of its axis.
+
+        Arrows go from the state at step t to the state at step t + ``stride``, so they chain
+        along the path and their length is the distance covered in ``stride`` steps. With
+        ``log`` ({target: (centre, c)}, see ``start_log_axes``) both axes show
+        symlog(similarity - centre, c), centred on the start points; the arrows still join the
+        same steps, but their length is no longer proportional to the speed.
+        """
+        if log is None:
+            fx = fy = (lambda v: np.asarray(v, dtype=float))
+        else:
+            fx = (lambda v: symlog(np.asarray(v, dtype=float) - log[i][0], log[i][1]))
+            fy = (lambda v: symlog(np.asarray(v, dtype=float) - log[j][0], log[j][1]))
         for path in paths:
-            for sim in path["sim"]:
-                ax.plot(sim[:, i], sim[:, j], color=path["colour"], ls=path["style"], lw=1, alpha=0.45)
+            small = path.get("small", False)
+            for r, sim in enumerate(path["sim"]):
+                ax.plot(fx(sim[:, i]), fy(sim[:, j]), color=path["colour"], ls=path["style"],
+                        lw=0.9 if small else 1, alpha=0.8 if small else 0.45, zorder=2)
                 at, step = path_arrows(sim, stride)
-                ax.quiver(at[:, i], at[:, j], step[:, i], step[:, j], angles="xy", scale_units="xy", scale=1,
-                          color=path["colour"], width=0.005, headwidth=4, headlength=5, headaxislength=4.5,
-                          minlength=0, zorder=3)
-                ax.scatter(sim[0, i], sim[0, j], s=55, color=path["colour"], edgecolor="black", zorder=4)
-                ax.scatter(sim[-1, i], sim[-1, j], s=45, marker="s", color=path["colour"], edgecolor="black",
-                           zorder=4)
+                x0, y0 = fx(at[:, i]), fy(at[:, j])
+                ax.quiver(x0, y0, fx(at[:, i] + step[:, i]) - x0, fy(at[:, j] + step[:, j]) - y0, angles="xy",
+                          scale_units="xy", scale=1, color=path["colour"], width=0.003 if small else 0.005,
+                          headwidth=4, headlength=5, headaxislength=4.5, minlength=0, zorder=3,
+                          edgecolor="#333333" if small else None, linewidth=0.3 if small else 0)
+                # Start points larger on the log axes, which are there to show them
+                size = (28 if small else 55) * (1.6 if log is not None else 1.0)
+                ax.scatter(fx(sim[0, i]), fy(sim[0, j]), s=size, color=path["colour"], edgecolor="black",
+                           lw=0.6 if small else 1.0, zorder=4)
+                ax.scatter(fx(sim[-1, i]), fy(sim[-1, j]), s=22 if small else 45, marker="s", color=path["colour"],
+                           edgecolor="black", lw=0.6 if small else 1.0, zorder=4)
+                if log is not None and not small and r == 0 and path.get("label"):
+                    ax.annotate(path["label"], (fx(sim[0, i]), fy(sim[0, j])), xytext=(6, -10),
+                                textcoords="offset points", fontsize=7, color=path["colour"])
         for k, name in enumerate(names):
-            ax.scatter(target_sim[k, i], target_sim[k, j], marker="*", s=260, color=outcome_colour(k),
+            ax.scatter(fx(target_sim[k, i]), fy(target_sim[k, j]), marker="*", s=260, color=outcome_colour(k),
                        edgecolor="black", lw=0.8, zorder=5)
-            ax.annotate(name, (target_sim[k, i], target_sim[k, j]), xytext=(7, 5), textcoords="offset points",
-                        fontsize=8)
+            ax.annotate(name, (fx(target_sim[k, i]), fy(target_sim[k, j])), xytext=(7, 5),
+                        textcoords="offset points", fontsize=8)
         for value in (0.0, 1.0):
-            ax.axvline(value, color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
-            ax.axhline(value, color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
-        ax.set_xlim(limits)
-        ax.set_ylim(limits)
-        ax.set_aspect("equal")
-        ax.set_xlabel(f"similarity to {names[i]}")
-        ax.set_ylabel(f"similarity to {names[j]}")
+            ax.axvline(fx(value), color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
+            ax.axhline(fy(value), color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
+        ax.set_xlim(fx(np.asarray(limits)))
+        ax.set_ylim(fy(np.asarray(limits)))
+        if log is None:
+            ax.set_aspect("equal")
+            ax.set_xlabel(f"similarity to {names[i]}")
+            ax.set_ylabel(f"similarity to {names[j]}")
+        else:
+            ax.set_box_aspect(1)
+            ax.set_xlabel(f"similarity to {names[i]} − {log[i][0]:.3g}\n(log around the start points)")
+            ax.set_ylabel(f"similarity to {names[j]} − {log[j][0]:.3g}\n(log around the start points)")
+            positions, labels = offset_ticks(*limits, *log[i])
+            ax.set_xticks(positions, labels, fontsize=7, rotation=45)
+            positions, labels = offset_ticks(*limits, *log[j])
+            ax.set_yticks(positions, labels, fontsize=7)
+            # The start points' centre
+            ax.axvline(0.0, color="#d0d0d0", lw=0.6, ls=":", zorder=0)
+            ax.axhline(0.0, color="#d0d0d0", lw=0.6, ls=":", zorder=0)
         style_axes(ax)
         # The target images at the ends of their axes: i right of the x axis, j on top of the y axis
         zoom = 30 / targets.shape[-1]
@@ -200,13 +277,17 @@ with app.setup(hide_code=True):
     def similarity_space_3d(ax, paths, target_sim, names, stride, limits):
         """The space of the first three targets."""
         for path in paths:
+            small = path.get("small", False)
             for sim in path["sim"]:
-                ax.plot(sim[:, 0], sim[:, 1], sim[:, 2], color=path["colour"], ls=path["style"], lw=1, alpha=0.45)
+                ax.plot(sim[:, 0], sim[:, 1], sim[:, 2], color=path["colour"], ls=path["style"],
+                        lw=0.9 if small else 1, alpha=0.8 if small else 0.45)
                 at, step = path_arrows(sim, stride)
                 ax.quiver(at[:, 0], at[:, 1], at[:, 2], step[:, 0], step[:, 1], step[:, 2], color=path["colour"],
-                          arrow_length_ratio=0.3, linewidth=1.2)
-                ax.scatter(*sim[0, :3], s=55, color=path["colour"], edgecolor="black", depthshade=False)
-                ax.scatter(*sim[-1, :3], s=45, marker="s", color=path["colour"], edgecolor="black", depthshade=False)
+                          arrow_length_ratio=0.3, linewidth=0.8 if small else 1.2)
+                ax.scatter(*sim[0, :3], s=28 if small else 55, color=path["colour"], edgecolor="black",
+                           depthshade=False)
+                ax.scatter(*sim[-1, :3], s=22 if small else 45, marker="s", color=path["colour"], edgecolor="black",
+                           depthshade=False)
         for k, name in enumerate(names[:3]):
             ax.scatter(*target_sim[k, :3], marker="*", s=260, color=outcome_colour(k), edgecolor="black",
                        depthshade=False)
@@ -223,11 +304,14 @@ with app.setup(hide_code=True):
     # Path of the specific start point
     SPECIAL_COLOUR = "#7b2cbf"
 
-    def start_basin_background(ax, plane, i, j, n_targets):
+    def start_basin_background(ax, plane, i, j, n_targets, log=None):
         """Regions of start points in the plane of targets i and j, coloured by the stable
         attractor they reach (grey: none), with their boundaries. ``plane`` has sim
-        [a, b, target] (similarity of each start point) and stable [a, b]."""
+        [a, b, target] (similarity of each start point) and stable [a, b]. ``log``: as in
+        ``similarity_plane``."""
         x, y, stable = plane["sim"][..., i], plane["sim"][..., j], plane["stable"]
+        if log is not None:
+            x, y = symlog(x - log[i][0], log[i][1]), symlog(y - log[j][0], log[j][1])
         for k in range(-1, n_targets):
             region = (stable == k).astype(float)
             if not region.any():
@@ -243,7 +327,8 @@ with app.setup(hide_code=True):
             Patch(color=NO_ATTRACTOR_COLOUR, alpha=0.45, label="start → no stable attractor")]
 
     def similarity_legend(paths):
-        handles = [Line2D([], [], color=path["colour"], ls=path["style"], label=path["label"]) for path in paths]
+        handles = [Line2D([], [], color=path["colour"], ls=path["style"], label=path["label"]) for path in paths
+                   if path.get("label")]
         handles += [
             Line2D([], [], marker="o", ls="", color="#888888", markeredgecolor="black", label="start signal"),
             Line2D([], [], marker="s", ls="", color="#888888", markeredgecolor="black", label="end"),
@@ -1125,8 +1210,12 @@ def _():
 def _(runs):
     mo.stop(len(runs) == 0, mo.callout("No multi-attractor bundles found in this model store.", kind="warn"))
 
+    def _label(value):
+        # pandas 3: astype(str) keeps missing values as NaN, which breaks sorting
+        return "None" if value is None or (isinstance(value, float) and value != value) else str(value)
+
     def _choice(column, label):
-        _options = sorted(set(runs[column].astype(str)))
+        _options = sorted(set(runs[column].map(_label)))
         return mo.ui.multiselect(_options, value=_options, label=label)
 
     _emojis = sorted({_name for _targets in runs.targets for _name in _targets.split(" + ")})
@@ -1151,8 +1240,12 @@ def _(runs):
 @app.cell(hide_code=True)
 def _(model_filters, runs, target_filter, text_filter):
     _keep = np.ones(len(runs), dtype=bool)
+    def _label(value):
+        # pandas 3: astype(str) keeps missing values as NaN, which breaks sorting
+        return "None" if value is None or (isinstance(value, float) and value != value) else str(value)
+
     for _column, _values in model_filters.value.items():
-        _keep &= runs[_column].astype(str).isin(_values).to_numpy()
+        _keep &= runs[_column].map(_label).isin(_values).to_numpy()
     for _name in target_filter.value:
         _keep &= runs.targets.apply(lambda _targets: _name in _targets.split(" + ")).to_numpy()
     if text_filter.value.strip():
@@ -1653,9 +1746,22 @@ def _():
       Similarity = 1 − RGBA MSE to the target / RGBA MSE of an empty grid to it
     - Stars: where the target images themselves lie. Each path starts (circle) at its start signal, i.e. the seed
       used for the rollout, and ends (square) after *Length* × `run.t` steps; *Rollouts* paths per start
-    - Arrows: the movement over *arrow spacing* steps, so a long arrow means fast. The graph below shows the
-      similarity to the end attractor (the target closest at the end) and its velocity per step
+    - Arrows: each goes from the state at step t to the state at step t + *arrow spacing*, so they chain along the
+      path and a long arrow means fast. The graph below shows the similarity to the end attractor (the target
+      closest at the end) and its velocity per step
     - 2 targets: one plane; 3 targets: a 3D view and its three planes; more: the plane of every pair of targets
+    - The thin line is the path at every step, the arrows only every *arrow spacing* steps. Where the state
+      hardly changes any more (at the end, close to its attractor) the arrows become shorter than their heads
+      and vanish behind the line: there the run is (nearly) at rest
+    - *Axes*: the planes also with logarithmic axes centred on the start points: each axis shows
+      symlog(similarity − centre, c) = sign · log10(1 + |similarity − centre| / c), with the centre in the middle
+      of the start points and c = their spread / *magnify*. The start points (which all sit close together just
+      above 0) fill the middle of the plot, so their positions relative to each other are visible; further out the
+      axis is logarithmic (one decade per tick, labelled as offset from the centre), so the whole paths still fit
+    - *Colours between the trained seeds*: *per pair of seeds* start points evenly between every two training
+      seeds (the whole seeds are mixed), one rollout each with the same random keys, drawn thin in their start
+      colour (pixel seeds that only differ in their hidden code: a blend of their targets' colours). They are not
+      in the graph below
     """)
     return
 
@@ -1670,9 +1776,28 @@ def _(explore_names, explore_pair_target, explore_seeds):
     velocity_stride = mo.ui.slider(1, 32, value=8, step=1, label="Arrow spacing (steps)", show_value=True)
     velocity_smooth = mo.ui.slider(1, 32, value=8, step=1, label="Velocity smoothing (steps)", show_value=True)
     velocity_background = mo.ui.checkbox(value=False, label="Start-point basins as background")
-    mo.hstack([velocity_starts, velocity_stride, velocity_smooth, velocity_background], justify="start", gap=1.5,
-              wrap=True)
-    return velocity_background, velocity_smooth, velocity_starts, velocity_stride
+    velocity_axes = mo.ui.radio({"linear": "linear", "logarithmic": "log", "both": "both"}, value="both",
+                                label="Axes", inline=True)
+    velocity_magnify = mo.ui.dropdown({"10×": 10.0, "50×": 50.0, "200×": 200.0, "1000×": 1000.0}, value="50×",
+                                      label="Log axes: magnify the start points")
+    velocity_between = mo.ui.checkbox(value=False, label="Colours between the trained seeds")
+    velocity_between_n = mo.ui.number(1, 100, value=20, step=1, label="per pair of seeds")
+    mo.vstack([
+        mo.hstack([velocity_starts, velocity_stride, velocity_smooth, velocity_background], justify="start",
+                  gap=1.5, wrap=True),
+        mo.hstack([velocity_axes, velocity_magnify, velocity_between, velocity_between_n], justify="start",
+                  gap=1.5, wrap=True),
+    ])
+    return (
+        velocity_axes,
+        velocity_background,
+        velocity_between,
+        velocity_between_n,
+        velocity_magnify,
+        velocity_smooth,
+        velocity_starts,
+        velocity_stride,
+    )
 
 
 @app.cell(hide_code=True)
@@ -1701,6 +1826,53 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    eval_seed,
+    explore_cfg,
+    explore_footprint,
+    explore_id,
+    explore_length,
+    explore_names,
+    explore_pair_target,
+    explore_seeds,
+    explore_targets,
+    get_model,
+    memory_budget,
+    parameter_noise,
+    velocity_between,
+    velocity_between_n,
+):
+    # N start points evenly between every two training seeds, t = 1 / (N + 1) … N / (N + 1). The whole
+    # seeds are mixed (colour and, for pixel seeds, the hidden code); one rollout each, with the same
+    # random keys for all, so they differ only by their start
+    between_paths = []
+    if velocity_between.value:
+        _t = np.arange(1, velocity_between_n.value + 1) / (velocity_between_n.value + 1)
+        _meta = [(_a, _b, _x) for _a, _b in itertools.combinations(range(len(explore_seeds)), 2) for _x in _t]
+        _states = np.array([(1 - _x) * explore_seeds[_a] + _x * explore_seeds[_b] for _a, _b, _x in _meta])
+        _distances, _ = ma.rollout(
+            get_model(explore_id, parameter_noise.value), _states, explore_targets,
+            explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value), memory_gb=memory_budget.value,
+            shared_key=True,
+        )
+        _colours = np.clip(ma.seed_colours(_states, explore_footprint)[:, :3], 0.0, 1.0)
+        _seed_colours = ma.seed_colours(explore_seeds, explore_footprint)[:, :3]
+        for (_a, _b, _x), _d, _c in zip(_meta, _distances, _colours):
+            # The start colour itself; pixel seeds that differ only in their hidden code all look the same,
+            # so they get a blend of their targets' colours instead
+            if np.abs(_seed_colours[_a] - _seed_colours[_b]).max() < 0.05:
+                _c = (1 - _x) * np.array(to_rgb(outcome_colour(int(explore_pair_target[_a])))) \
+                    + _x * np.array(to_rgb(outcome_colour(int(explore_pair_target[_b]))))
+            between_paths.append({
+                "seeds": (_a, _b), "t": float(_x), "colour": to_hex(_c), "distances": _d[None],
+                "label": f"seed {_a} ({explore_names[int(explore_pair_target[_a])]}) → seed {_b} "
+                         f"({explore_names[int(explore_pair_target[_b])]})",
+            })
+    return (between_paths,)
+
+
+@app.cell(hide_code=True)
+def _(
+    between_paths,
     chosen_distances,
     explore_cfg,
     explore_names,
@@ -1709,7 +1881,10 @@ def _(
     seed_distances,
     special_distances,
     start_planes,
+    velocity_axes,
     velocity_background,
+    velocity_between_n,
+    velocity_magnify,
     velocity_smooth,
     velocity_starts,
     velocity_stride,
@@ -1725,14 +1900,27 @@ def _(
             _colour, _distances = outcome_colour(int(explore_pair_target[_start])), seed_distances[_start]
         _paths.append({"label": _label, "colour": _colour, "style": LINESTYLES[len(_paths) % len(LINESTYLES)],
                        "sim": ma.similarity(_distances, explore_targets)})
+    _main_paths = list(_paths)
+    # The start colours between the trained seeds: thin, below the others, one legend entry per pair of seeds
+    _between = [{"label": None, "colour": _p["colour"], "style": "-", "small": True,
+                 "sim": ma.similarity(_p["distances"], explore_targets)} for _p in between_paths]
+    _between_legend = []
+    for _seeds in dict.fromkeys(_p["seeds"] for _p in between_paths):
+        _group = [_p for _p in between_paths if _p["seeds"] == _seeds]
+        _between_legend.append(Line2D([], [], color=_group[len(_group) // 2]["colour"], lw=1.5,
+                                      label=f"{velocity_between_n.value} colours,\n{_group[0]['label']}"))
+    _paths = _between + _paths
     mo.stop(not _paths, mo.md("Choose at least one start signal."))
 
     _n = len(explore_names)
     _target_sim = ma.target_similarity(explore_targets)
     _background = start_planes if velocity_background.value else None
     _limits = similarity_limits(_paths + [{"sim": _plane["sim"]} for _plane in _background or []], _target_sim)
+    # Log axes centred on the start points of the drawn paths
+    _log = start_log_axes(_paths, velocity_magnify.value)
     _stride = velocity_stride.value
     _planes = list(itertools.combinations(range(_n), 2))
+    _legend = similarity_legend(_paths) + _between_legend + (start_basin_legend(explore_names) if _background else [])
     _figures = []
     if velocity_background.value and start_planes is None:
         _figures.append(mo.callout("For the background, compute the start-point basins below.", kind="neutral"))
@@ -1741,28 +1929,37 @@ def _(
         similarity_space_3d(_fig3d.add_subplot(projection="3d"), _paths, _target_sim, explore_names, _stride,
                             _limits)
         _fig3d.subplots_adjust(left=0.0, right=0.72, bottom=0.02, top=0.98)
-        _fig3d.legend(handles=similarity_legend(_paths), loc="center left", bbox_to_anchor=(0.74, 0.5),
-                      frameon=False, fontsize=8)
+        _fig3d.legend(handles=similarity_legend(_paths) + _between_legend, loc="center left",
+                      bbox_to_anchor=(0.74, 0.5), frameon=False, fontsize=8)
         _figures.append(_fig3d)
-    _columns = min(3, len(_planes))
-    _rows = math.ceil(len(_planes) / _columns)
-    _width = 4.8 * _columns + 2.2
-    _fig, _axes = plt.subplots(_rows, _columns, figsize=(_width, 4.8 * _rows), squeeze=False)
-    for _k, (_ax, (_i, _j)) in enumerate(zip(_axes.flat, _planes)):
-        if _background:
-            start_basin_background(_ax, _background[_k], _i, _j, _n)
-        similarity_plane(_ax, _i, _j, _paths, _target_sim, explore_targets, explore_names, _stride, _limits)
-    for _ax in _axes.flat[len(_planes):]:
-        _ax.axis("off")
-    # The legend in a margin on the right
-    _fig.tight_layout(rect=(0, 0, 1 - 2.2 / _width, 1), w_pad=4, h_pad=3)
-    _fig.legend(handles=similarity_legend(_paths) + (start_basin_legend(explore_names) if _background else []),
-                loc="center left", bbox_to_anchor=(1 - 2.1 / _width, 0.5), frameon=False, fontsize=8)
-    _figures.append(_fig)
+    # The planes, with linear and/or symmetric-logarithmic axes
+    for _scale in ("linear", "log"):
+        if velocity_axes.value not in (_scale, "both"):
+            continue
+        _columns = min(3, len(_planes))
+        _rows = math.ceil(len(_planes) / _columns)
+        _width = 4.8 * _columns + 2.8
+        _fig, _axes = plt.subplots(_rows, _columns, figsize=(_width, 4.8 * _rows + 0.6), squeeze=False)
+        for _k, (_ax, (_i, _j)) in enumerate(zip(_axes.flat, _planes)):
+            if _background:
+                start_basin_background(_ax, _background[_k], _i, _j, _n, log=_log if _scale == "log" else None)
+            similarity_plane(_ax, _i, _j, _paths, _target_sim, explore_targets, explore_names, _stride, _limits,
+                             log=_log if _scale == "log" else None)
+        for _ax in _axes.flat[len(_planes):]:
+            _ax.axis("off")
+        # The legend in a margin on the right
+        _fig.tight_layout(rect=(0, 0, 1 - 2.8 / _width, 0.93), w_pad=4, h_pad=3)
+        _fig.legend(handles=_legend, loc="center left", bbox_to_anchor=(1 - 2.7 / _width, 0.5), frameon=False,
+                    fontsize=8)
+        _fig.suptitle("linear axes" if _scale == "linear" else
+                      "logarithmic axes centred on the start points: ticks are offsets from the centre given at "
+                      "each axis,\nlinear within ±c = start spread / " f"{velocity_magnify.value:g}, one decade per "
+                      "tick beyond; the arrows join the same steps as in the linear plot", fontsize=9)
+        _figures.append(_fig)
 
     # Similarity to the end attractor (the closest target at the end) and its velocity per step
     _fig_v, (_ax_s, _ax_v) = plt.subplots(1, 2, figsize=(12, 3.8))
-    for _path in _paths:
+    for _path in _main_paths:
         for _r, _sim in enumerate(_path["sim"]):
             _end = int(np.nanargmax(_sim[-1])) if np.isfinite(_sim[-1]).any() else 0
             _towards = _sim[:, _end]
@@ -1903,14 +2100,52 @@ def _(
     parameter_noise,
     start_weights,
 ):
-    # The specific start point, rolled out like the chosen colour: distances [rollout, step, target]
+    # The specific start point, rolled out like the chosen colour: distances [rollout, step, target],
+    # RGBA at the start and the end [rollout, 2, 4, H, W] and the stable-attractor measures of every rollout
     _state = ma.mixed_states(base_seed, explore_targets, [start_weights.value])
-    special_distances, _ = ma.rollout(
+    special_distances, special_images, _classes, _changes = ma.rollout(
         get_model(explore_id, parameter_noise.value), np.repeat(_state, explore_repeats.value, axis=0),
         explore_targets, explore_length.value * explore_cfg.run.t, jr.PRNGKey(eval_seed.value),
-        memory_gb=memory_budget.value,
+        memory_gb=memory_budget.value, dynamics=True,
     )
-    return (special_distances,)
+    special_dynamics = ma.attractor_dynamics(_classes, _changes, len(explore_targets))
+    return special_distances, special_dynamics, special_images
+
+
+@app.cell(hide_code=True)
+def _(
+    explore_cfg,
+    explore_names,
+    explore_targets,
+    special_distances,
+    special_dynamics,
+    special_images,
+    stable_rule,
+    start_weights,
+):
+    # What the specific start point looks like at the start and at the end of every rollout
+    _n = len(explore_names)
+    _stable = ma.stable_attractor(special_dynamics, settled=stable_rule.value)
+    _sim = ma.similarity(special_distances, explore_targets)
+    _columns = 1 + len(special_images)
+    _fig, _axes = plt.subplots(1, _columns, figsize=(2.3 * _columns + 0.6, 2.9), squeeze=False)
+
+    def _similarities(values):
+        return "\n".join(f"{_name} {_value:+.3f}" for _name, _value in zip(explore_names, values))
+
+    show_image(_axes[0, 0], special_images[0, 0], f"start (step 0)\n{_similarities(_sim[0, 0])}", SPECIAL_COLOUR)
+    for _r in range(len(special_images)):
+        _final = ma.scan_class_name(special_dynamics["final_class"][_r], explore_names)
+        _result = (f"stable {explore_names[_stable[_r]]} from step {special_dynamics['steps_to_attractor'][_r]}"
+                   if _stable[_r] >= 0 else f"not stable: {_final}")
+        show_image(_axes[0, 1 + _r], special_images[_r, -1],
+                   f"end (step {_sim.shape[1] - 1}), rollout {_r}\n{_result}\n{_similarities(_sim[_r, -1])}",
+                   outcome_colour(int(_stable[_r])) if _stable[_r] >= 0 else INK_SECONDARY)
+    _weights = ", ".join(f"{_name} {_w:.2f}" for _name, _w in zip(explore_names, start_weights.value))
+    _fig.suptitle(f"specific start point ({_weights}); similarities below each image", fontsize=9)
+    _fig.tight_layout()
+    special_figure = _fig
+    return (special_figure,)
 
 
 @app.cell(hide_code=True)
@@ -1918,11 +2153,13 @@ def _(
     explore_names,
     explore_targets,
     special_distances,
+    special_figure,
     start_planes,
     start_weights,
     velocity_stride,
 ):
-    mo.stop(start_planes is None)
+    mo.stop(start_planes is None, mo.vstack([
+        special_figure, mo.md("Press **Compute start-point basins** above for the regions.")]))
     _n = len(explore_names)
     _special = {"label": "specific start point", "colour": SPECIAL_COLOUR, "style": "-",
                 "sim": ma.similarity(special_distances, explore_targets)}
@@ -1944,7 +2181,7 @@ def _(
                 bbox_to_anchor=(1 - 2.3 / _width, 0.5), frameon=False, fontsize=8)
     _weights = ", ".join(f"{_name} {_w:.2f}" for _name, _w in zip(explore_names, start_weights.value))
     _fig.suptitle(f"start-point basins; specific start point: {_weights}", fontsize=9, y=1.0)
-    _fig
+    mo.vstack([_fig, special_figure])
     return
 
 
