@@ -304,7 +304,6 @@ def rollout(model, states, targets, steps, key, frames=1, memory_gb=1.0, dynamic
     return distances, rgba
 
 
-<<<<<<< HEAD
 def mse(a, b):
     """Mean squared error over the last three axes."""
     return np.mean((np.asarray(a) - np.asarray(b)) ** 2, axis=(-3, -2, -1))
@@ -360,8 +359,6 @@ def classify(distances, final_rgba, threshold):
     return np.where(np.isfinite(best), labels, DIVERGED)
 
 
-=======
->>>>>>> upstream/main
 def outcome_name(label, names):
     return names[label] if label >= 0 else OUTCOME_NAMES[label]
 
