@@ -30,11 +30,8 @@ from matplotlib.colors import hsv_to_rgb, rgb_to_hsv
 from Experiments.emoji.config_helpers import _pad_tuple, build_hidden_seeds, load_data
 from NCA.model.factory import PORTABLE_MODEL_FAMILIES, build_model
 
-# Labels of final states that are not one of the targets
-OTHER, DIED, DIVERGED = -1, -2, -3
-OUTCOME_NAMES = {OTHER: "other", DIED: "died", DIVERGED: "diverged"}
-# A cell is alive when its alpha is above this, as in the usual NCA convention
-ALIVE_ALPHA = 0.1
+# Outcome labels and the nearest-target rule are shared with the impulse validation
+from NCA.trainer.impulse.outcomes import ALIVE_ALPHA, DIED, DIVERGED, OTHER, OUTCOME_NAMES, classify, mse, target_gap  # noqa: F401
 
 # Stable-attractor criterion of spatial_position_scan_combined.py (same names and values).
 # Class of a state: the target with the smallest MSE, INTERMEDIATE when at least two
@@ -307,6 +304,7 @@ def rollout(model, states, targets, steps, key, frames=1, memory_gb=1.0, dynamic
     return distances, rgba
 
 
+<<<<<<< HEAD
 def mse(a, b):
     """Mean squared error over the last three axes."""
     return np.mean((np.asarray(a) - np.asarray(b)) ** 2, axis=(-3, -2, -1))
@@ -362,6 +360,8 @@ def classify(distances, final_rgba, threshold):
     return np.where(np.isfinite(best), labels, DIVERGED)
 
 
+=======
+>>>>>>> upstream/main
 def outcome_name(label, names):
     return names[label] if label >= 0 else OUTCOME_NAMES[label]
 
