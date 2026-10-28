@@ -12,33 +12,44 @@ import scipy.ndimage as ndi
 import skimage.io
 from skimage import morphology
 
-from Common.dataloader import background, hot_pixels
+from Common.dataloader import background, hot_pixels, stripes
 from Common.dataloader.alignment import grid_position, load_colony_alignment
 from Common.dataloader.background import subtract_background
 from Common.dataloader.disk_cache import cache_folder, cached_array
 from Common.dataloader.hot_pixels import replace_hot_pixels_per_channel
+from Common.dataloader.stripes import remove_stripes_per_channel
+from Common.dataloader.micropattern_projections import (
+    PROJECTION_FOLDERS,
+    check_projection,
+    image_key,
+    image_stem,
+)
 from Common.dataloader.micropattern_schemas import (
     DEFAULT_260726_HISTOGRAM_PERCENTILES,
     DEFAULT_260726_INTENSITY_FACTORS,
     MICROPATTERN_260726_SCHEMA,
 )
-from Common.dataloader.normalisation import percentile_bins
+from Common.dataloader.normalisation import trajectory_bins
 from Common.dataloader.results import MicropatternDataset
 
 
 _CONDITIONS = ("ctrl", "sl0", "sl24")
+# Folder of each group for a condition and projection folder suffix. Every
+# group but the RNA (imaged in 2D) has one folder per projection (see
+# micropattern_projections.py).
 _GROUP_DIRECTORIES = {
-    "cell_fate_s1": lambda condition: Path("cell_fate_markers")
-    / f"{condition}_s1",
-    "cell_fate_s2": lambda condition: Path("cell_fate_markers")
-    / f"{condition}_s2",
-    "rna_expression": lambda condition: Path("signalling")
+    "cell_fate_s1": lambda condition, folder: Path("cell_fate_markers")
+    / f"{condition}_s1_{folder}",
+    "cell_fate_s2": lambda condition, folder: Path("cell_fate_markers")
+    / f"{condition}_s2_{folder}",
+    "rna_expression": lambda condition, folder: Path("signalling")
     / "rna_expression"
     / condition,
-    "protein_response": lambda condition: Path("signalling")
+    "protein_response": lambda condition, folder: Path("signalling")
     / "protein_response"
-    / condition,
+    / f"{condition}_{folder}",
 }
+
 _STRUCTURAL_SOURCE_CHANNEL = {
     "cell_fate_s1": 3,
     "cell_fate_s2": 3,
@@ -63,9 +74,11 @@ class MicropatternImageRecord:
 
 
 def _natural_sort_key(path):
+    # Sorted without the projection, so every projection gives the same
+    # replicate order.
     return tuple(
         int(part) if part.isdigit() else part.lower()
-        for part in re.split(r"(\d+)", Path(path).name)
+        for part in re.split(r"(\d+)", image_stem(Path(path).name))
     )
 
 
@@ -136,6 +149,7 @@ def _select_replicates(files, group, replicate_indices):
 def build_micropattern_260726_manifest(
     root,
     conditions=("ctrl",),
+    projection="max",
     timesteps=(0, 12, 24, 36, 48),
     replicate_count=3,
     replicate_indices=None,
@@ -150,8 +164,11 @@ def build_micropattern_260726_manifest(
     automatic choice for any ``(condition, group, timestep)`` key with an
     ordered list of up to ``replicate_count`` relative or absolute filenames.
     ``experiment_groups`` restricts the staining groups (``None`` = all).
+    ``projection`` (``"max"``, ``"sum"`` or ``"slice"``) chooses the version
+    of the cell-fate and protein response images; the RNA images have only one.
     """
 
+    check_projection(projection)
     schema = MICROPATTERN_260726_SCHEMA.select_groups(experiment_groups)
     selected_group_names = schema.group_names
     root = Path(root).expanduser().resolve()
@@ -188,11 +205,11 @@ def build_micropattern_260726_manifest(
     replicate_manifest = {} if replicate_manifest is None else replicate_manifest
     for condition in sorted(required_conditions):
         for group in selected_group_names:
-            relative_directory = _GROUP_DIRECTORIES[group]
-            directory = root / relative_directory(condition)
+            directory = root / _GROUP_DIRECTORIES[group](condition, PROJECTION_FOLDERS[projection])
             if not directory.is_dir():
                 raise FileNotFoundError(
-                    f"Expected directory for {condition}/{group}: {directory}"
+                    f"Expected directory for {condition}/{group} ({projection} "
+                    f"projection): {directory}"
                 )
             files_by_time = {timestep: [] for timestep in timesteps}
             for path in directory.glob("*.tif"):
@@ -325,8 +342,9 @@ def _compute_histogram_bins(records, hist_eqs, schema, intensity_factors):
             )
             if np.min(values) < 0 or np.max(values) > 65535:
                 raise ValueError(
-                    "Automatic histogram calculation expects intensities in [0, 65535]; "
-                    "provide histogram_bins explicitly for other data ranges"
+                    "Automatic histogram calculation expects intensities in [0, 65535] "
+                    "(sum projections are larger); enable cleaning or provide "
+                    "histogram_bins explicitly for other data ranges"
                 )
             integer_values = np.rint(values).astype(np.uint16)
             histograms[target_index] += np.bincount(
@@ -530,8 +548,18 @@ def _schema_group(group):
     return next(item for item in MICROPATTERN_260726_SCHEMA.experiment_groups if item.name == group)
 
 
+def _cleaned_positions(group):
+    """Positions of ``group``'s channels in its cleaned images.
+
+    Cleaned images hold every channel of the full group (so the disk cache
+    does not depend on excluded measurements); ``group`` may have fewer.
+    """
+    names = [channel.name for channel in _schema_group(group.name).channels]
+    return [names.index(channel.name) for channel in group.channels]
+
+
 def _clean_image(record, intensity_factors, cleaning, work):
-    """Cleaning steps 1 to 4 for one image: ``[X, Y, C]`` at downsampling ``work``.
+    """Cleaning steps 1 to 5 for one image: ``[X, Y, C]`` at downsampling ``work``.
 
     These are the slow steps, which ``cleaned_image`` can cache on disk.
     """
@@ -547,6 +575,12 @@ def _clean_image(record, intensity_factors, cleaning, work):
         [cleaning.hot_pixel_thresholds.get(name, 0) for name in names],
         cleaning.hot_pixel_window,
     )
+    image, _ = remove_stripes_per_channel(
+        image,
+        [cleaning.horizontal_stripe_widths.get(name, 0) for name in names],
+        [cleaning.vertical_stripe_widths.get(name, 0) for name in names],
+        cleaning.stripe_block,
+    )
     image, _ = subtract_background(
         image,
         [cleaning.background_radii.get(name, 0) for name in names],
@@ -559,6 +593,7 @@ def _clean_image(record, intensity_factors, cleaning, work):
 # The code behind _clean_image; editing any of it starts a new cache folder.
 _CLEANING_SOURCES = (
     hot_pixels,
+    stripes,
     background,
     _read_multichannel_image,
     _channel_values,
@@ -571,7 +606,7 @@ _CLEANING_SOURCES = (
 def cleaning_cache_folder(cache_dir, root, intensity_factors, cleaning, work):
     """The ``disk_cache`` folder for images cleaned with these settings.
 
-    Only the settings of cleaning steps 1 to 4 count, so one folder serves
+    Only the settings of cleaning steps 1 to 5 count, so one folder serves
     every selection of conditions and replicates, every alignment and every
     normalisation setting.
     """
@@ -587,6 +622,9 @@ def cleaning_cache_folder(cache_dir, root, intensity_factors, cleaning, work):
         "hot_pixel_window": cleaning.hot_pixel_window,
         "background_radii": dict(cleaning.background_radii),
         "background_shrink": cleaning.background_shrink,
+        "horizontal_stripe_widths": dict(cleaning.horizontal_stripe_widths),
+        "vertical_stripe_widths": dict(cleaning.vertical_stripe_widths),
+        "stripe_block": cleaning.stripe_block,
     }
     return cache_folder(cache_dir, f"micropattern_260726_ds{work}", settings, _CLEANING_SOURCES)
 
@@ -601,7 +639,7 @@ def cleaned_image(record, intensity_factors, cleaning, work, root, folder=None):
 
 
 def _centre_image(image, record, cleaning, alignment, root, work):
-    """Cleaning step 5: centre ``image`` with ``alignment`` and make its circular mask."""
+    """Cleaning step 6: centre ``image`` with ``alignment`` and make its circular mask."""
     centre = grid_position(alignment.centre(Path(record.path).relative_to(root).as_posix()), work)
     target = ((image.shape[0] - 1) / 2.0, (image.shape[1] - 1) / 2.0)
     image = ndi.shift(
@@ -633,21 +671,26 @@ def _trajectory_bounds(
 
     The percentiles of each channel are taken over all timesteps of a
     trajectory (inside the mask with ``percentiles_inside_mask``) and shared
-    between trajectories as set by ``cleaning.normalisation``. With
-    ``knockouts_use_control_bounds``, a knockout trajectory takes its bounds
-    from the control trajectory of the same replicate. Images in
+    between trajectories as set by ``cleaning.normalisation``, with knockouts
+    handled as set by ``cleaning.knockout_bounds`` (see
+    ``Common/dataloader/normalisation.py:trajectory_bins``). Images in
     ``excluded`` (flagged as low quality) do not count. Channels a trajectory
     did not measure get NaN.
     """
-    if cleaning.knockouts_use_control_bounds:
-        sources = list(dict.fromkeys(
-            [("ctrl", replicate) for _, replicate in trajectories] + list(trajectories)
-        ))
+    # Trajectories whose pixels set the bounds. Joint bounds always use every
+    # condition, so each load finds the same bounds whatever it selects.
+    replicates = [replicate for _, replicate in trajectories]
+    if cleaning.knockout_bounds == "joint":
+        extra = [(condition, replicate) for condition in _CONDITIONS for replicate in replicates]
+    elif cleaning.knockout_bounds == "control":
+        extra = [("ctrl", replicate) for replicate in replicates]
     else:
-        sources = list(trajectories)
+        extra = []
+    sources = list(dict.fromkeys(extra + list(trajectories)))
     channel_of = {}
     for group, target_indices in zip(schema.experiment_groups, schema.group_measurement_indices):
-        for channel_index, (target_index, channel) in enumerate(zip(target_indices, group.channels)):
+        positions = _cleaned_positions(group)
+        for channel_index, target_index, channel in zip(positions, target_indices, group.channels):
             channel_of[target_index] = (group.name, channel_index, channel.name)
 
     bounds = {trajectory: np.full((schema.n_measurement_channels, 2), np.nan) for trajectory in trajectories}
@@ -673,19 +716,9 @@ def _trajectory_bounds(
                 samples[(condition, replicate)] = np.concatenate(values)
         if not samples:
             continue
-        reference = {}
-        if cleaning.knockouts_use_control_bounds:
-            reference = {
-                trajectory: ("ctrl", trajectory[1])
-                for trajectory in samples
-                if trajectory[0] != "ctrl" and ("ctrl", trajectory[1]) in samples
-            }
-            # Only the requested trajectories and their references set the bounds.
-            keep = set(trajectories) | set(reference.values())
-            samples = {key: value for key, value in samples.items() if key in keep}
         low, high = cleaning.channel_percentiles.get(name, hist_eqs)
-        for trajectory, (lower, upper) in percentile_bins(
-            samples, low, high, cleaning.normalisation, reference=reference
+        for trajectory, (lower, upper) in trajectory_bins(
+            samples, low, high, cleaning.normalisation, cleaning.knockout_bounds
         ).items():
             if trajectory in bounds:
                 bounds[trajectory][target_index] = (lower, upper)
@@ -695,12 +728,14 @@ def _trajectory_bounds(
 def load_micropattern_260726(
     root,
     conditions=("ctrl",),
+    projection="max",
     timesteps=(0, 12, 24, 36, 48),
     downsample=4,
     replicate_count=3,
     replicate_indices=None,
     replicate_manifest=None,
     experiment_groups=None,
+    excluded_measurements=(),
     substitute_preperturbation=True,
     histogram_bins=None,
     hist_eqs=DEFAULT_260726_HISTOGRAM_PERCENTILES,
@@ -715,6 +750,11 @@ def load_micropattern_260726(
     cache_dir=None,
 ):
     """Load replicates of the multichannel 260726 micropattern dataset.
+
+    ``projection`` (``"max"``, ``"sum"`` or ``"slice"``) chooses the version
+    of the cell-fate and protein response images (see
+    ``micropattern_projections.py``); the RNA images are the same for every
+    projection.
 
     ``boundary_radius_quantile`` drops foreground pixels far from the colony
     centre before fitting a circle; lower values or a
@@ -740,8 +780,12 @@ def load_micropattern_260726(
     pooled over all loaded images at full resolution and centred on a circle
     fitted to its colony pixels.
 
+    ``excluded_measurements`` names measurement channels to leave out (e.g.
+    ``("cell_fate_s2/SOX17",)``); see ``ChannelSchema.without_measurements``.
+
     ``excluded_images`` lists image paths relative to ``root`` (e.g.
-    ``cell_fate_markers/ctrl_s1/A2_F14_24h.ome.tif``) flagged as low quality.
+    ``cell_fate_markers/ctrl_s1/A2_F14_24h``, compared by ``image_key`` so
+    that the projection does not matter) flagged as low quality.
     Each flagged image is one experiment group at one timestep of one
     replicate, and is treated as not measured: its channels are False in
     ``measurement_mask`` (so losses and reinjection skip them) and it does
@@ -753,7 +797,7 @@ def load_micropattern_260726(
 
     ``cache_dir`` keeps the cleaned images on disk (see
     ``Common/dataloader/disk_cache.py``), so later loads with the same
-    cleaning settings skip the slow cleaning steps 1 to 4. It is only used
+    cleaning settings skip the slow cleaning steps 1 to 5. It is only used
     with ``cleaning`` enabled; ``None`` turns it off.
 
     Returns
@@ -786,10 +830,21 @@ def load_micropattern_260726(
     cleaned = cleaning is not None and cleaning.enabled
     conditions = tuple(conditions)
     timesteps = tuple(int(timestep) for timestep in timesteps)
+    unknown = sorted(set(excluded_measurements) - set(MICROPATTERN_260726_SCHEMA.measurement_names))
+    if unknown:
+        raise ValueError("Unknown excluded measurements: " + ", ".join(unknown))
     schema = MICROPATTERN_260726_SCHEMA.select_groups(experiment_groups)
+    # Exclusions in groups that are not loaded have nothing to remove.
+    schema = schema.without_measurements(
+        [name for name in excluded_measurements if name in schema.measurement_names]
+    )
     inventory = build_micropattern_260726_manifest(
         root=root,
-        conditions=conditions,
+        # Joint knockout bounds need the images of every condition.
+        conditions=(
+            _CONDITIONS if cleaned and cleaning.knockout_bounds == "joint" else conditions
+        ),
+        projection=projection,
         timesteps=timesteps,
         replicate_count=replicate_count,
         replicate_indices=replicate_indices,
@@ -819,12 +874,12 @@ def load_micropattern_260726(
 
     records = inventory["records"]
     dataset_root = Path(root).expanduser().resolve()
-    excluded_names = set(excluded_images or ())
-    excluded = frozenset(
-        record
-        for record in records
-        if Path(record.path).relative_to(dataset_root).as_posix() in excluded_names
-    )
+    excluded_keys = {image_key(name) for name in excluded_images or ()}
+
+    def relative_key(record):
+        return image_key(Path(record.path).relative_to(dataset_root).as_posix())
+
+    excluded = frozenset(record for record in records if relative_key(record) in excluded_keys)
     if cleaned and histogram_bins is not None and not cleaning.shares_bounds:
         raise ValueError(
             "histogram_bins cannot be reused with per-replicate normalisation; "
@@ -848,6 +903,7 @@ def load_micropattern_260726(
     group_index = {
         group.name: index for index, group in enumerate(schema.experiment_groups)
     }
+    cleaned_positions = {group.name: _cleaned_positions(group) for group in schema.experiment_groups}
     record_lookup = {
         (record.condition, record.group, record.timestep, record.replicate): record
         for record in records
@@ -907,6 +963,7 @@ def load_micropattern_260726(
         )
         if not cleaned:
             return image, mask
+        image = image[..., cleaned_positions[record.group]]
         target_indices = group_target_indices[record.group]
         lower, upper = np.moveaxis(trajectory_bounds[trajectory][list(target_indices)], -1, 0)
         image = np.clip((image - lower) / np.maximum(upper - lower, 1e-6), 0.0, 1.0)
@@ -1107,15 +1164,14 @@ def load_micropattern_260726(
     aux = {
         "channel_schema": schema,
         "selected_experiment_groups": schema.group_names,
+        "projection": projection,
         "pool_copies": pool_copies,
         "manifest": records,
         "unselected_files": inventory["unselected_files"],
         "histogram_bins": histogram_bins,
         "intensity_factors": intensity_factors,
         "cleaning": cleaning if cleaned else None,
-        "excluded_images": tuple(
-            sorted(Path(record.path).relative_to(dataset_root).as_posix() for record in excluded)
-        ),
+        "excluded_images": tuple(sorted(relative_key(record) for record in excluded)),
         "excluded": excluded_mask,
         "imputed": imputed,
         "pattern_radius": alignment.pattern_radius if cleaned else None,

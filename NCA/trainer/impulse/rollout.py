@@ -17,6 +17,10 @@ def run_nca_batch(
     boundary_callback=identity_boundary,
     return_trajectory=False,
     scan_kind="lax",
+    trajectory_every=1,
+    trajectory_channels=None,
+    checkpoints=None,
+    forcing=None,
 ):
     """Run an NCA over a batch with independent random keys.
 
@@ -36,12 +40,33 @@ def run_nca_batch(
         If true, also return states with shape ``[batch, steps, channels, height, width]``.
     scan_kind
         Equinox scan mode, normally ``"lax"`` or ``"checkpointed"``.
+    trajectory_every
+        Keep every n-th state in the trajectory (after updates n, 2n, ...),
+        giving ``steps / n`` frames. ``steps`` must be a multiple of it.
+    trajectory_channels
+        Keep only the first this many channels in the trajectory (None: all).
+        With the two options above, long rollouts of large lattices fit in memory.
+    checkpoints
+        Number of saved states for ``scan_kind="checkpointed"`` (None: equinox
+        chooses a few, and the backward pass reruns most steps more than once).
+        Set it to ``steps`` to save every state and rerun each step once.
+    forcing
+        Optional ``[n, 1 or batch, channels, height, width]`` deltas;
+        ``forcing[i]`` is added to the state after update ``i`` for ``i < n``.
     """
 
     if steps < 0:
         raise ValueError("steps must be non-negative")
+    if trajectory_every < 1 or steps % trajectory_every:
+        raise ValueError(
+            f"steps ({steps}) must be a multiple of trajectory_every ({trajectory_every})"
+        )
+    channels = slice(None, trajectory_channels)
     if steps == 0:
-        empty = jnp.empty((len(initial_states), 0, *initial_states.shape[1:]), dtype=initial_states.dtype)
+        empty = jnp.empty(
+            (len(initial_states), 0, *initial_states[:, channels].shape[1:]),
+            dtype=initial_states.dtype,
+        )
         return (initial_states, empty) if return_trajectory else initial_states
 
     batched_model = jax.vmap(model, in_axes=(0, None, 0), out_axes=0)
@@ -51,19 +76,54 @@ def run_nca_batch(
         step_key = jax.random.fold_in(step_key, step_index)
         batch_keys = jax.random.split(step_key, len(states))
         states = batched_model(states, boundary_callback, batch_keys)
-        return (step_key, states), states
+        if forcing is not None:
+            n = len(forcing)
+            states = states + forcing[jnp.minimum(step_index, n - 1)] * (step_index < n)
+        return (step_key, states), states[:, channels] if return_trajectory else None
 
-    (_, final_states), trajectory = eqx.internal.scan(
-        step,
-        (key, initial_states),
-        xs=jnp.arange(steps),
-        kind=scan_kind,
-    )
+    def frame(carry, step_indices):
+        # trajectory_every updates, then keep the last state
+        carry, _ = eqx.internal.scan(
+            lambda carry, index: (step(carry, index)[0], None),
+            carry,
+            xs=step_indices,
+            kind=scan_kind,
+        )
+        return carry, carry[1][:, channels] if return_trajectory else None
+
+    if trajectory_every == 1:
+        (_, final_states), trajectory = eqx.internal.scan(
+            step,
+            (key, initial_states),
+            xs=jnp.arange(steps),
+            kind=scan_kind,
+            checkpoints=checkpoints,
+        )
+    else:
+        (_, final_states), trajectory = eqx.internal.scan(
+            frame,
+            (key, initial_states),
+            xs=jnp.arange(steps).reshape((-1, trajectory_every)),
+            kind=scan_kind,
+        )
     if not return_trajectory:
         return final_states
     trajectory = jnp.swapaxes(trajectory, 0, 1)
     return final_states, trajectory
 
+
+
+def run_with_intervention(model, intervention, initial_states, steps, key, **kwargs):
+    """Run ``run_nca_batch`` with an intervention that may last several steps.
+
+    The intervention's first delta is added to ``initial_states`` and delta
+    ``s`` is added after update ``s - 1``, so a duration-t intervention acts on
+    the first t states. Other keyword arguments go to ``run_nca_batch``.
+    """
+
+    deltas = intervention.deltas(initial_states)
+    forcing = deltas[1:] if len(deltas) > 1 else None
+    return run_nca_batch(model, initial_states + deltas[0], steps, key, forcing=forcing, **kwargs)
 
 
 @eqx.filter_jit

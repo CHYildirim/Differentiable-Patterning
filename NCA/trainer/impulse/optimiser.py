@@ -7,7 +7,7 @@ import optax
 
 from Common.trainer.loss_table import build_loss_functions
 from NCA.trainer.impulse.regularisers import intervention_metrics, weighted_regulariser
-from NCA.trainer.impulse.rollout import identity_boundary, run_nca_batch
+from NCA.trainer.impulse.rollout import identity_boundary, run_nca_batch, run_with_intervention
 from NCA.trainer.impulse.types import ImpulseBatch, ImpulseResult
 
 
@@ -52,6 +52,11 @@ class NCAImpulseOptimiser:
     boundary_callback: object = identity_boundary
     scan_kind: str = "lax"
     resample_every: int = 0
+    # The saved evaluation trajectories keep the observed channels of every
+    # n-th state only, so long rollouts of large lattices fit in memory.
+    evaluation_frame_every: int = 1
+    # Saved states of a checkpointed rollout (see run_nca_batch)
+    checkpoints: int | None = None
     logger: object = None
 
     def __post_init__(self):
@@ -65,6 +70,13 @@ class NCAImpulseOptimiser:
             raise ValueError("loss_window cannot be longer than rollout_steps")
         if self.resample_every < 0:
             raise ValueError("resample_every must be non-negative")
+        # The intervention must end before the loss window starts
+        last_step = max(self.rollout_steps - self.loss_window + 1, 1)
+        if self.intervention.duration > last_step:
+            raise ValueError(
+                f"The intervention lasts {self.intervention.duration} steps but must end "
+                f"before the loss window: at most rollout_steps - loss_window + 1 = {last_step}"
+            )
         if self.loss_functions is None:
             self.loss_functions = build_loss_functions(self.loss_names, self.loss_args or {})
         else:
@@ -101,32 +113,64 @@ class NCAImpulseOptimiser:
         weights = self.component_weights[:, None]
         return jnp.sum(weights * components, axis=0) / jnp.sum(weights)
 
+    def _switch_rate(self, final_states, batch):
+        """Fraction of final states nearer the target than the source state.
+
+        Distances are the mean squared error of the observed channels. For
+        stable_attractor pairs the source is the grown source attractor; for
+        the other pair sources it is the start state.
+        """
+
+        def distance(states, references):
+            difference = states[:, : self.observed_channels] - references[:, : self.observed_channels]
+            return jnp.mean(difference**2, axis=(-3, -2, -1))
+
+        nearer_target = distance(final_states, batch.target_states) < distance(
+            final_states, batch.initial_states
+        )
+        return float(jnp.mean(nearer_target))
+
     def evaluate(self, intervention, batch, key):
         """Evaluate an intervention without updating its parameters."""
 
-        perturbed = intervention(batch.initial_states)
+        # The first delta perturbs the initial state; later ones are added
+        # during the first rollout segment.
+        deltas = intervention.deltas(batch.initial_states)
+        perturbed = batch.initial_states + deltas[0]
+        forcing = deltas[1:] if len(deltas) > 1 else None
+        rollout = dict(
+            boundary_callback=self.boundary_callback,
+            scan_kind=self.scan_kind,
+            checkpoints=self.checkpoints,
+        )
         if self.loss_window == 1:
             final_states = run_nca_batch(
-                self.model,
-                perturbed,
-                self.rollout_steps,
-                key,
-                boundary_callback=self.boundary_callback,
-                scan_kind=self.scan_kind,
+                self.model, perturbed, self.rollout_steps, key, forcing=forcing, **rollout
             )
             components = self._loss_components(final_states, batch.target_states, key)
         else:
-            final_states, trajectory = run_nca_batch(
+            # Run up to the loss window without keeping states, then keep only
+            # the window (and only the observed channels, when the loss uses no others).
+            states = run_nca_batch(
                 self.model,
                 perturbed,
-                self.rollout_steps,
+                self.rollout_steps - self.loss_window,
                 key,
-                boundary_callback=self.boundary_callback,
+                forcing=forcing,
+                **rollout,
+            )
+            final_states, window = run_nca_batch(
+                self.model,
+                states,
+                self.loss_window,
+                jax.random.fold_in(key, 1),
                 return_trajectory=True,
-                scan_kind=self.scan_kind,
+                trajectory_channels=(
+                    self.observed_channels if self.loss_channels == "observed" else None
+                ),
+                **rollout,
             )
             # [batch, window, ...] -> [batch * window, ...], each target repeated window times
-            window = trajectory[:, -self.loss_window:]
             predictions = window.reshape((-1, *window.shape[2:]))
             targets = jnp.repeat(batch.target_states, self.loss_window, axis=0)
             components = self._loss_components(predictions, targets, key)
@@ -134,7 +178,7 @@ class NCAImpulseOptimiser:
             components = jnp.mean(components, axis=-1)
         per_sample_loss = self._weighted_loss(components)
         target_loss = jnp.mean(per_sample_loss)
-        metrics = intervention_metrics(batch.initial_states, perturbed)
+        metrics = intervention_metrics(batch.initial_states, deltas)
         penalty = weighted_regulariser(metrics, self.regulariser_coefficients)
         total_loss = self.objective(target_loss, penalty, metrics)
         return {
@@ -227,16 +271,24 @@ class NCAImpulseOptimiser:
             best_metrics = final_metrics
 
         evaluation_steps = self.rollout_steps if evaluation_steps is None else evaluation_steps
+        if evaluation_steps % self.evaluation_frame_every:
+            raise ValueError(
+                f"evaluation_steps ({evaluation_steps}) must be a multiple of "
+                f"evaluation_frame_every ({self.evaluation_frame_every})"
+            )
         evaluation_key = jax.random.fold_in(train_key, iterations + 1)
         perturbed = best_intervention(best_batch.initial_states)
-        final_states, perturbed_trajectory = run_nca_batch(
+        final_states, perturbed_trajectory = run_with_intervention(
             self.model,
-            perturbed,
+            best_intervention,
+            best_batch.initial_states,
             evaluation_steps,
             evaluation_key,
             boundary_callback=self.boundary_callback,
             return_trajectory=True,
             scan_kind=self.scan_kind,
+            trajectory_every=self.evaluation_frame_every,
+            trajectory_channels=self.observed_channels,
         )
         baseline_final_states, baseline_trajectory = run_nca_batch(
             self.model,
@@ -246,6 +298,8 @@ class NCAImpulseOptimiser:
             boundary_callback=self.boundary_callback,
             return_trajectory=True,
             scan_kind=self.scan_kind,
+            trajectory_every=self.evaluation_frame_every,
+            trajectory_channels=self.observed_channels,
         )
         # Target loss after the longer evaluation rollout, with and without the
         # intervention, to check whether a switch persists.
@@ -256,6 +310,8 @@ class NCAImpulseOptimiser:
             self._loss_components(baseline_final_states, best_batch.target_states, evaluation_key)
         )
         return ImpulseResult(
+            evaluation_switch_rate=self._switch_rate(final_states, best_batch),
+            baseline_switch_rate=self._switch_rate(baseline_final_states, best_batch),
             best_intervention=best_intervention,
             best_step=best_step,
             best_loss=best_loss,

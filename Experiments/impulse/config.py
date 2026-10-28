@@ -35,7 +35,14 @@ class ImpulseRolloutConfig(ConfigValue):
     # Number of final rollout states the target loss is averaged over.
     loss_window: int = 1
     evaluation_steps: int = 256
+    # Save the observed channels of every n-th evaluation state (must divide
+    # evaluation_steps); keeping every full state can run out of GPU memory.
+    evaluation_frame_every: int = 8
     scan_kind: str = "lax"
+    # Saved states of a checkpointed rollout. null: equinox chooses a few and
+    # the backward pass reruns most steps more than once; set it to steps to
+    # save every state and rerun each step once (faster, more memory).
+    checkpoints: int | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,13 @@ class ImpulseInterventionConfig(ConfigValue):
     channels: str = "hidden"
     spatial: str = "local"
     width: float = 0.2
+    # Side length in pixels of the square impulse (spatial: patch only)
+    patch_size: int = 3
+    # Number of NCA steps the impulse is applied for, at the same centre
+    duration: int = 1
+    # Not used by the run: a label for grouping runs in W&B, e.g. the
+    # patch_size**2 * duration budget of a sweep
+    budget: int | None = None
 
 
 @dataclass(frozen=True)
@@ -63,12 +77,6 @@ class ImpulseOptimiserConfig(ConfigValue):
 
 
 @dataclass(frozen=True)
-class OutputConfig(ConfigValue):
-    directory: str = "impulse_runs"
-    base_env: str | None = "IMPULSE_OUTPUT_PATH"
-
-
-@dataclass(frozen=True)
 class ImpulseConfig(ConfigValue):
     iterations: int
     batch_size: int
@@ -80,4 +88,6 @@ class ImpulseConfig(ConfigValue):
     objective: ImpulseObjectiveConfig
     loss: LossConfig
     optimiser: ImpulseOptimiserConfig
-    output: OutputConfig
+    # Not used by the run; sweep over it to repeat otherwise identical configs
+    # with different seeds.
+    repeat: int = 0

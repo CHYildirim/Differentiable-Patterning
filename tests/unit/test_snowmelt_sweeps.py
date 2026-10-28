@@ -28,11 +28,12 @@ def test_config_value_reads_typed_configs_and_dicts_alike():
     assert sweeps.config_value(plain, "model.kernel_str") == "ID+LAP"
 
 
-@pytest.mark.parametrize("name, count", [("resolution", 15), ("input", 40), ("architecture", 60), ("update_rule", 27), ("hold_out", 24)])
+@pytest.mark.parametrize("name, count", [("resolution", 15), ("input", 120), ("input_single_band", 96), ("architecture", 120), ("update_rule", 27), ("hold_out", 8)])
 def test_generated_manifests_have_one_run_per_factor_combination(name, count):
     sweep = sweeps.SWEEPS[name]
+    manifests = sweeps.generated_manifests()
 
-    expected = sweeps.expected_runs(sweep)
+    expected = sweeps.expected_runs(sweep, manifests[sweeps.default_experiment(sweep, manifests)])
 
     assert len(expected) == count
     assert len({sweeps.run_key(row, sweep) for row in expected}) == count
@@ -50,6 +51,19 @@ def test_latest_per_run_and_missing_runs():
     assert sorted(r["model_id"] for r in kept) == ["new", "other"]
     assert [r["model_id"] for r in superseded] == ["old"]
     assert [r["repeat"] for r in sweeps.missing_runs(expected, kept, sweep)] == [2]
+
+
+def test_latest_per_run_keeps_each_wandb_group_apart():
+    sweep = sweeps.SWEEPS["update_rule"]
+
+    def row(model_id, group, created_at):
+        return {"model_id": model_id, "wandb_group": group, "fire_rate": 0.5, "activation": "relu",
+                "repeat": 0, "created_at": created_at}
+
+    kept, superseded = sweeps.latest_per_run([row("a_old", "a", "1"), row("a_new", "a", "3"), row("b", "b", "2")], sweep)
+
+    assert sorted(r["model_id"] for r in kept) == ["a_new", "b"]
+    assert [r["model_id"] for r in superseded] == ["a_old"]
 
 
 def test_score_channel_prefers_ndsi_then_sca():
@@ -91,13 +105,17 @@ def _publish_small_bundle(tmp_path, raw, targets):
     return open_model_bundle(bundle.path)
 
 
-def test_find_bundles_reads_only_the_sweep_folder(tmp_path):
+def test_expected_runs_is_empty_without_a_manifest():
+    assert sweeps.expected_runs(sweeps.SWEEPS["hold_out"], None) == []
+
+
+def test_find_bundles_reads_only_the_collection_folder(tmp_path):
     bundle = _publish_small_bundle(tmp_path, _synthetic_raw(T=3), ("NDSI",))
 
-    found = sweeps.find_bundles(tmp_path / "store", sweeps.SWEEPS["input"])
+    found = sweeps.find_bundles(tmp_path / "store", collection="tests")
 
     assert [b.id for b in found] == [bundle.id]
-    assert sweeps.find_bundles(tmp_path / "store", sweeps.SWEEPS["architecture"]) == []
+    assert sweeps.find_bundles(tmp_path / "store") == []
 
 
 @pytest.mark.parametrize("grid", ["full", "model"])
@@ -115,6 +133,7 @@ def test_evaluate_bundle_scores_the_ndsi_channel(tmp_path, grid):
     assert maps["channel"] == "NDSI"
     assert maps["observed"].shape == maps["mean"].shape == (3, 4, 4)
     np.testing.assert_allclose(maps["mean"][0], maps["observed"][0], atol=1e-6)  # rollouts start from the data
-    assert np.isfinite(summary["skill"]) and 0.0 <= summary["snow_csi"] <= 1.0
+    assert np.isfinite(summary["skill"]) and 0.0 <= summary["snow_accuracy"] <= 1.0
     assert training["targets"] == "NDSI+B3" and training["static"] == "DEM"
+    assert training["wandb_group"] == bundle.manifest.provenance.wandb.get("group")
     assert training["best_loss"] == 0.01 and training["best_at_fraction"] == 30 / bundle.config.run.iterations

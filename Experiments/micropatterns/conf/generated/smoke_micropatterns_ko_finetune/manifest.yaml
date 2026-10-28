@@ -12,6 +12,7 @@ configs:
     model_store.collection: pipeline-smoke
     data.dataset: micropatterns_260726
     data.micropattern.data_channels: 14
+    data.micropattern.excluded_measurements: []
     data.micropattern.experiment_groups:
     - cell_fate_s1
     - cell_fate_s2
@@ -52,13 +53,13 @@ configs:
     loss.terms.0.multi_target_weights.correlation: 0.0
     loss.terms.0.multi_target_weights.radial: 1.0
     loss.terms.0.random_channel_shuffle: true
-    logging.wandb.group: smoke_micropatterns_ko_finetune-pixel-seeds-and-impulse-explorer
+    logging.wandb.group: smoke_micropatterns_ko_finetune-drop-s2-sox17-joint
     experiment.name: smoke_micropatterns_ko_finetune
     seed: 0
     logging.wandb.tag_keys:
     - data.knockout.curriculum
   config:
-    schema_version: 7
+    schema_version: 9
     seed: 0
     experiment:
       name: smoke_micropatterns_ko_finetune
@@ -85,6 +86,7 @@ configs:
         - cell_fate_s2
         - rna_expression
         - protein_response
+        excluded_measurements: []
         timesteps:
         - 0
         - 12
@@ -94,6 +96,7 @@ configs:
         data_channels: 14
         pad_multiple: null
         noise_strength: 0.005
+        projection: max
         intermediate_reinjection_probability: 0.5
         intermediate_reinjection_probability_end: 0.5
         intermediate_reinjection_decay_start_fraction: 0.25
@@ -142,12 +145,15 @@ configs:
             protein_response/LEF1: 10
             protein_response/LMBR: 0
             protein_response/SMAD23: 0
+          horizontal_stripe_widths: {}
+          vertical_stripe_widths: {}
+          stripe_block: 0
           alignment_file: Experiments/micropatterns/conf/alignment/260726_alignment.yaml
           mask_radius_scale: 1.0
           normalisation: per_replicate
           channel_percentiles: {}
           percentiles_inside_mask: true
-          knockouts_use_control_bounds: false
+          knockout_bounds: joint
         quality_flags_file: Experiments/micropatterns/conf/quality/260726_quality_flags.yaml
         duplicate_final_timestep: false
       knockout:
@@ -229,7 +235,7 @@ configs:
         epsilon: 1.0e-08
       wandb:
         project: pipeline-smoke
-        group: smoke_micropatterns_ko_finetune-pixel-seeds-and-impulse-explorer
+        group: smoke_micropatterns_ko_finetune-drop-s2-sox17-joint
         tags: null
         tag_keys:
         - data.knockout.curriculum
@@ -247,6 +253,7 @@ configs:
     model_store.collection: pipeline-smoke
     data.dataset: micropatterns_260726
     data.micropattern.data_channels: 14
+    data.micropattern.excluded_measurements: []
     data.micropattern.experiment_groups:
     - cell_fate_s1
     - cell_fate_s2
@@ -289,13 +296,13 @@ configs:
     loss.terms.0.multi_target_weights.correlation: 0.0
     loss.terms.0.multi_target_weights.radial: 1.0
     loss.terms.0.random_channel_shuffle: true
-    logging.wandb.group: smoke_micropatterns_ko_finetune-pixel-seeds-and-impulse-explorer
+    logging.wandb.group: smoke_micropatterns_ko_finetune-drop-s2-sox17-joint
     experiment.name: smoke_micropatterns_ko_finetune
     seed: 0
     logging.wandb.tag_keys:
     - data.knockout.curriculum
   config:
-    schema_version: 7
+    schema_version: 9
     seed: 0
     experiment:
       name: smoke_micropatterns_ko_finetune
@@ -322,6 +329,7 @@ configs:
         - cell_fate_s2
         - rna_expression
         - protein_response
+        excluded_measurements: []
         timesteps:
         - 0
         - 12
@@ -331,6 +339,7 @@ configs:
         data_channels: 14
         pad_multiple: null
         noise_strength: 0.005
+        projection: max
         intermediate_reinjection_probability: 0.5
         intermediate_reinjection_probability_end: 0.5
         intermediate_reinjection_decay_start_fraction: 0.25
@@ -379,12 +388,15 @@ configs:
             protein_response/LEF1: 10
             protein_response/LMBR: 0
             protein_response/SMAD23: 0
+          horizontal_stripe_widths: {}
+          vertical_stripe_widths: {}
+          stripe_block: 0
           alignment_file: Experiments/micropatterns/conf/alignment/260726_alignment.yaml
           mask_radius_scale: 1.0
           normalisation: per_replicate
           channel_percentiles: {}
           percentiles_inside_mask: true
-          knockouts_use_control_bounds: false
+          knockout_bounds: joint
         quality_flags_file: Experiments/micropatterns/conf/quality/260726_quality_flags.yaml
         duplicate_final_timestep: false
       knockout:
@@ -468,7 +480,7 @@ configs:
         epsilon: 1.0e-08
       wandb:
         project: pipeline-smoke
-        group: smoke_micropatterns_ko_finetune-pixel-seeds-and-impulse-explorer
+        group: smoke_micropatterns_ko_finetune-drop-s2-sox17-joint
         tags: null
         tag_keys:
         - data.knockout.curriculum

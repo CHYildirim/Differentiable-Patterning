@@ -1,8 +1,8 @@
-experiment_name: multi_attractor_stability_sweep_v2
+experiment_name: multi_attractor_stability_sweep_v1
 
 entrypoint: Experiments.emoji.train:run
 
-output_subdir: generated/emoji_multi_attractor_outsource2
+output_subdir: generated/emoji_multi_attractor_outsource
 
 seed_mode: index
 

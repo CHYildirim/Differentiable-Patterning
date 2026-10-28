@@ -7,20 +7,23 @@
 1. intensity factors (``data.micropattern.intensity_factors``);
 2. hot pixel replacement (``hot_pixel_thresholds``, ``hot_pixel_window``),
    see ``Common/dataloader/hot_pixels.py``;
-3. rolling-ball background removal (``background_radii``,
+3. removal of narrow horizontal or vertical bands of raised background,
+   e.g. from tile stitching (``horizontal_stripe_widths``,
+   ``vertical_stripe_widths``, ``stripe_block``), see ``Common/dataloader/stripes.py``;
+4. rolling-ball background removal (``background_radii``,
    ``background_shrink``), see ``Common/dataloader/background.py``;
-4. block-averaging to the normalisation resolution (downsampling 4, the
+5. block-averaging to the normalisation resolution (downsampling 4, the
    notebook's, when the training downsampling is a multiple of 4; otherwise
    the training downsampling itself);
-5. centring with the colony centres in ``alignment_file``, see
+6. centring with the colony centres in ``alignment_file``, see
    ``Common/dataloader/alignment.py``, and a circular mask of the pattern
    radius times ``mask_radius_scale``;
-6. linear rescaling of each channel to [0, 1] between a low and a high
+7. linear rescaling of each channel to [0, 1] between a low and a high
    percentile (``data.micropattern.histogram_percentiles``, or
    ``channel_percentiles`` per channel), taken over all timesteps of a
    trajectory, shared between trajectories as set by ``normalisation``, see
    ``Common/dataloader/normalisation.py``;
-7. zeroing outside the mask and block-averaging to the training resolution.
+8. zeroing outside the mask and block-averaging to the training resolution.
 
 Without ``enabled`` the loader keeps its earlier behaviour, which configs
 saved before schema version 6 rely on.
@@ -35,7 +38,7 @@ from Common.dataloader.micropattern_schemas import (
     DEFAULT_260726_HOT_PIXEL_THRESHOLDS,
     MICROPATTERN_260726_SCHEMA,
 )
-from Common.dataloader.normalisation import NORMALISATION_MODES
+from Common.dataloader.normalisation import KNOCKOUT_BOUNDS, NORMALISATION_MODES
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,15 @@ class MicropatternCleaningConfig(ConfigValue):
         default_factory=lambda: dict(DEFAULT_260726_BACKGROUND_RADII)
     )
     background_shrink: int = 4
+    # Largest band width per channel in full-resolution pixels (0 or absent
+    # = off), for horizontal and vertical bands. Off for every channel by
+    # default.
+    horizontal_stripe_widths: Mapping[str, int] = field(default_factory=dict)
+    vertical_stripe_widths: Mapping[str, int] = field(default_factory=dict)
+    # Length in full-resolution pixels of the pieces of each row (or column)
+    # that get their own stripe profile, for seams that cover only part of a
+    # row; 0 uses whole rows.
+    stripe_block: int = 0
     # Alignment file exported from the data cleaning notebook. A relative
     # path is resolved against the repository root.
     alignment_file: str | None = None
@@ -62,14 +74,18 @@ class MicropatternCleaningConfig(ConfigValue):
     # Percentile overrides per channel, e.g. {"cell_fate_s1/SOX2": (1.0, 99.0)}.
     channel_percentiles: Mapping[str, tuple[float, float]] = field(default_factory=dict)
     percentiles_inside_mask: bool = True
-    # Knockout trajectories take their bounds from the control replicates.
-    knockouts_use_control_bounds: bool = False
+    # How knockouts get their bounds, one of KNOCKOUT_BOUNDS: "selected"
+    # (like any other trajectory), "control" (the control bounds) or "joint"
+    # (control bounds widened where a knockout goes outside them).
+    knockout_bounds: str = "selected"
 
     def __post_init__(self):
         names = set(MICROPATTERN_260726_SCHEMA.measurement_names)
         for label, mapping in (
             ("hot_pixel_thresholds", self.hot_pixel_thresholds),
             ("background_radii", self.background_radii),
+            ("horizontal_stripe_widths", self.horizontal_stripe_widths),
+            ("vertical_stripe_widths", self.vertical_stripe_widths),
             ("channel_percentiles", self.channel_percentiles),
         ):
             unknown = sorted(set(mapping) - names)
@@ -82,6 +98,11 @@ class MicropatternCleaningConfig(ConfigValue):
             raise ValueError("cleaning.hot_pixel_thresholds must be non-negative")
         if any(value < 0 for value in self.background_radii.values()):
             raise ValueError("cleaning.background_radii must be non-negative")
+        for label in ("horizontal_stripe_widths", "vertical_stripe_widths"):
+            if any(value < 0 for value in getattr(self, label).values()):
+                raise ValueError(f"cleaning.{label} must be non-negative")
+        if self.stripe_block < 0:
+            raise ValueError("cleaning.stripe_block must be non-negative")
         if self.hot_pixel_window < 3 or self.hot_pixel_window % 2 == 0:
             raise ValueError("cleaning.hot_pixel_window must be an odd integer of at least 3")
         if self.background_shrink < 1:
@@ -91,6 +112,10 @@ class MicropatternCleaningConfig(ConfigValue):
         if self.normalisation not in NORMALISATION_MODES:
             raise ValueError(
                 f"cleaning.normalisation must be one of {tuple(NORMALISATION_MODES)}"
+            )
+        if self.knockout_bounds not in KNOCKOUT_BOUNDS:
+            raise ValueError(
+                f"cleaning.knockout_bounds must be one of {tuple(KNOCKOUT_BOUNDS)}"
             )
         for name, (low, high) in self.channel_percentiles.items():
             if not 0 <= low < high <= 100:

@@ -769,10 +769,13 @@ def test_260726_knockout_requires_full_schema():
     import Experiments.micropatterns.config_helpers as micropattern_helpers
 
     cfg = _micropattern_cfg(
-        data_channels=11, curriculum=("ko_0h",), dataset="micropatterns_260726"
+        data_channels=11,
+        curriculum=("ko_0h",),
+        dataset="micropatterns_260726",
+        experiment_groups=("cell_fate_s1", "cell_fate_s2", "rna_expression"),
     )
 
-    with pytest.raises(ValueError, match="full 14-channel schema"):
+    with pytest.raises(ValueError, match="every 260726 experiment group"):
         micropattern_helpers.load_data(cfg, impath="/tmp/micropatterns/")
 
 
@@ -968,8 +971,8 @@ def test_data_augmenter_4ch_colony_keeps_observable_channels():
     assert jnp.array_equal(y[0][:, :4], data[0, 1:])
 
 
-@pytest.mark.parametrize("use_control_bounds", [False, True])
-def test_260726_cleaning_reaches_the_loader(monkeypatch, use_control_bounds):
+@pytest.mark.parametrize("knockout_bounds", ["selected", "control", "joint"])
+def test_260726_cleaning_reaches_the_loader(monkeypatch, knockout_bounds):
     import Experiments.micropatterns.config_helpers as micropattern_helpers
     from Common.dataloader.micropattern_cleaning import MicropatternCleaningConfig
 
@@ -988,7 +991,7 @@ def test_260726_cleaning_reaches_the_loader(monkeypatch, use_control_bounds):
     cleaning = MicropatternCleaningConfig(
         enabled=True,
         alignment_file="Experiments/micropatterns/conf/alignment/example.yaml",
-        knockouts_use_control_bounds=use_control_bounds,
+        knockout_bounds=knockout_bounds,
     )
     cfg = _micropattern_cfg(
         data_channels=14,
@@ -1004,8 +1007,9 @@ def test_260726_cleaning_reaches_the_loader(monkeypatch, use_control_bounds):
     assert passed.alignment_file == str(
         micropattern_helpers.REPOSITORY_ROOT / "Experiments/micropatterns/conf/alignment/example.yaml"
     )
-    # Control bounds for knockouts come from a separate control-only load.
-    if use_control_bounds:
+    # Control bounds for knockouts come from a separate control-only load;
+    # joint bounds are found by each load itself.
+    if knockout_bounds == "control":
         assert len(calls) == 2 and calls[0]["conditions"] == ("ctrl",)
         assert calls[1]["histogram_bins"] is shared_bins
     else:
@@ -1039,5 +1043,39 @@ def test_260726_quality_flags_reach_the_loader(monkeypatch, tmp_path):
         impath="/tmp/micropatterns/",
     )
 
-    assert calls[0]["excluded_images"] == ("cell_fate_markers/ctrl_s1/a_24h.ome.tif",)
+    # Flags are keyed without the projection, so they hold for max, sum and slice.
+    assert calls[0]["excluded_images"] == ("cell_fate_markers/ctrl_s1/a_24h",)
     assert calls[1]["excluded_images"] == ()
+    assert calls[0]["projection"] == "max"
+
+
+def test_260726_excluded_measurements_reach_the_loader(monkeypatch):
+    import Experiments.micropatterns.config_helpers as micropattern_helpers
+
+    calls = []
+
+    def fake_loader(path, **kwargs):
+        calls.append(kwargs)
+        count = len(kwargs["replicate_indices"]) * len(kwargs["conditions"])
+        data = jnp.zeros((count, 5, 13, 2, 3))
+        boundary = jnp.ones((count, 1, 2, 3), dtype=bool)
+        mask = jnp.ones((count, 5, 13), dtype=bool)
+        return data, {"channel_schema": object(), "histogram_bins": None}, ["marker"] * 13, boundary, mask
+
+    monkeypatch.setattr(micropattern_helpers, "load_micropattern_260726", fake_loader)
+    cfg = _micropattern_cfg(
+        data_channels=13,
+        dataset="micropatterns_260726",
+        curriculum=("baseline", "ko_24h"),
+        excluded_measurements=("cell_fate_s2/SOX17",),
+    )
+
+    *_, cfg_str = micropattern_helpers.load_data(
+        cfg, impath="/tmp/micropatterns/", replicate_indices=(0, 1)
+    )
+
+    assert calls[-1]["excluded_measurements"] == ("cell_fate_s2/SOX17",)
+    assert "_xs2SOX17" in cfg_str
+    assert micropattern_helpers.measurement_count(None, ("cell_fate_s2/SOX17",)) == 13
+    # Exclusions in groups that are not loaded change nothing.
+    assert micropattern_helpers.measurement_count(["cell_fate_s1"], ("cell_fate_s2/SOX17",)) == 4

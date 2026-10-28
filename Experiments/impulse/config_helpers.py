@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 import jax
 import jax.numpy as jnp
 import optax
@@ -17,6 +14,10 @@ from NCA.trainer.impulse import (
     TargetedObjective,
     TrajectoryStatePairSource,
 )
+
+
+INTERVENTION_CHANNELS = ("all", "obs", "hidden", "single")
+INTERVENTION_SPATIAL = ("local", "patch", "global", "flat")
 
 
 def _as_dict(value):
@@ -117,19 +118,62 @@ def build_objective(objective_cfg):
 
 
 def build_intervention(intervention_cfg, observed_channels, model, trajectories, key):
-    """Build the perturbation module (``impulse/perturbation.py``) from config."""
+    """Build the perturbation module (``impulse/perturbation.py``) for a model and its data."""
 
+    state_shape = (model.N_CHANNELS, *trajectories.shape[-2:])
+    return intervention_from_config(intervention_cfg, observed_channels, state_shape, key)
+
+
+def intervention_from_config(intervention_cfg, observed_channels, state_shape, key):
+    """Build the perturbation module for NCA states of shape ``state_shape`` (C, H, W).
+
+    Saved impulse records rebuild their intervention with this, from the
+    shapes in their manifest, so no model or data is needed.
+    """
+
+    # "observed" matches the loss channel names; the perturbation calls it "obs".
+    channels = {"observed": "obs"}.get(intervention_cfg.channels, intervention_cfg.channels)
+    if channels not in INTERVENTION_CHANNELS:
+        raise ValueError(
+            f"Unknown impulse.intervention.channels {intervention_cfg.channels!r}; "
+            f"expected one of {['observed', *INTERVENTION_CHANNELS]}"
+        )
+    if intervention_cfg.spatial not in INTERVENTION_SPATIAL:
+        raise ValueError(
+            f"Unknown impulse.intervention.spatial {intervention_cfg.spatial!r}; "
+            f"expected one of {list(INTERVENTION_SPATIAL)}"
+        )
+    lattice_size = min(state_shape[-2:])
+    if intervention_cfg.spatial == "patch" and not 1 <= intervention_cfg.patch_size <= lattice_size:
+        raise ValueError(
+            f"impulse.intervention.patch_size must be between 1 and the lattice size "
+            f"({lattice_size}), got {intervention_cfg.patch_size}"
+        )
+    if intervention_cfg.duration < 1:
+        raise ValueError(
+            f"impulse.intervention.duration must be at least 1, got {intervention_cfg.duration}"
+        )
     return perturbation(
         mode={
-            "channel": intervention_cfg.channels,
+            "channel": channels,
             "spatial": intervention_cfg.spatial,
         },
-        CHANNELS=model.N_CHANNELS,
+        CHANNELS=state_shape[0],
         OBS_CHANNELS=observed_channels,
-        x=trajectories[:1, 0],
+        x=jnp.zeros((1, *state_shape)),
         WIDTH=intervention_cfg.width,
         key=key,
+        PATCH_SIZE=intervention_cfg.patch_size,
+        duration=intervention_cfg.duration,
     )
+
+
+def pixel_steps(intervention_cfg):
+    """Number of perturbed (pixel, step) pairs of a patch impulse, k * k * duration (else None)."""
+
+    if intervention_cfg.spatial != "patch":
+        return None
+    return intervention_cfg.patch_size**2 * intervention_cfg.duration
 
 
 def build_impulse_optimiser(optimiser_cfg):
@@ -148,21 +192,6 @@ def build_impulse_optimiser(optimiser_cfg):
     if clip_norm is not None:
         optimiser = optax.chain(optax.clip_by_global_norm(clip_norm), optimiser)
     return optimiser
-
-
-def resolve_output_directory(output_cfg, env=None):
-    """Create and return the directory for intervention outputs."""
-
-    directory = Path(str(output_cfg.directory)).expanduser()
-    environment = os.environ if env is None else env
-    if not directory.is_absolute():
-        base_env = output_cfg.base_env
-        base = environment.get(str(base_env)) if base_env else None
-        if base:
-            directory = Path(base).expanduser() / directory
-    directory = directory.resolve()
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
 
 
 def loss_args_from_config(loss_config):

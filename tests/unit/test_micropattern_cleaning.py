@@ -28,9 +28,22 @@ CENTRES = {
     ("ctrl", 2, 36): (70.0, 61.0),
     ("sl24", 1, 36): (61.0, 69.0),
     ("sl24", 2, 36): (67.0, 57.0),
+    ("sl0", 1, 24): (62.0, 64.0),
+    ("sl0", 1, 36): (65.0, 62.0),
+    ("sl0", 2, 24): (64.0, 66.0),
+    ("sl0", 2, 36): (60.0, 63.0),
 }
-# Brightness of each (condition, replicate); knockout 36h is twice as bright.
-BRIGHTNESS = {("ctrl", 1): 1000.0, ("ctrl", 2): 2000.0, ("sl24", 1): 2000.0, ("sl24", 2): 4000.0}
+# Brightness of each (condition, replicate). The sl24 knockout at 36h is
+# twice as bright as control, and the sl0 knockout is dim (like SOX17 under
+# NODAL knockout).
+BRIGHTNESS = {
+    ("ctrl", 1): 1000.0,
+    ("ctrl", 2): 2000.0,
+    ("sl24", 1): 2000.0,
+    ("sl24", 2): 4000.0,
+    ("sl0", 1): 100.0,
+    ("sl0", 2): 200.0,
+}
 
 
 def _colony(centre, brightness, seed):
@@ -47,7 +60,7 @@ def _colony(centre, brightness, seed):
 def _make_dataset(root):
     centres = {}
     for seed, ((condition, replicate, hour), centre) in enumerate(CENTRES.items()):
-        relative = Path("cell_fate_markers") / f"{condition}_s1" / f"sample_{replicate}_{hour}h.ome.tif"
+        relative = Path("cell_fate_markers") / f"{condition}_s1_max" / f"sample_{replicate}_{hour}h.ome.tif"
         path = Path(root) / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         skimage.io.imsave(
@@ -132,7 +145,7 @@ def test_knockouts_can_use_control_bounds(tmp_path):
     own, own_aux, names, _, _ = _load(tmp_path, _cleaning(alignment_file), conditions=("sl24",))
     control, control_aux, _, _, _ = _load(
         tmp_path,
-        _cleaning(alignment_file, knockouts_use_control_bounds=True),
+        _cleaning(alignment_file, knockout_bounds="control"),
         conditions=("sl24",),
     )
     sox17 = names.index("cell_fate_s1/SOX17")
@@ -151,12 +164,60 @@ def test_knockouts_can_use_control_bounds(tmp_path):
     assert own_aux["trajectory_bounds"][("sl24", 1)][name][1] > control_aux["trajectory_bounds"][("sl24", 1)][name][1]
 
 
+@pytest.mark.parametrize("normalisation", ["per_replicate", "replicate_mean"])
+def test_joint_knockout_bounds(tmp_path, normalisation):
+    alignment_file = _make_dataset(tmp_path)
+    name = "cell_fate_s1/SOX17"
+    joint = _cleaning(alignment_file, knockout_bounds="joint", normalisation=normalisation)
+    loads = {
+        conditions: _load(tmp_path, joint, conditions=conditions)
+        for conditions in [("ctrl",), ("sl0",), ("sl24",)]
+    }
+    bounds = {
+        trajectory: values[name]
+        for _, aux, _, _, _ in loads.values()
+        for trajectory, values in aux["trajectory_bounds"].items()
+    }
+    _, own, _, _, _ = _load(tmp_path, _cleaning(alignment_file, normalisation=normalisation))
+    for replicate in (1, 2):
+        # Every condition shares one range, whichever condition is loaded ...
+        assert bounds[("sl0", replicate)] == pytest.approx(bounds[("ctrl", replicate)])
+        assert bounds[("sl24", replicate)] == pytest.approx(bounds[("ctrl", replicate)])
+        # ... widened past the control range: below by the dim sl0 knockout
+        # and above by the brighter sl24 knockout.
+        control = own["trajectory_bounds"][("ctrl", replicate)][name]
+        assert bounds[("ctrl", replicate)][0] < 0.5 * control[0]
+        assert bounds[("ctrl", replicate)][1] > 1.5 * control[1]
+    # The dim sl0 knockout stays dim instead of being stretched to [0, 1].
+    sl0, _, names, _, _ = loads[("sl0",)]
+    late = np.asarray(sl0)[:, 1:, names.index(name)]
+    assert late[late > 0].mean() < 0.2
+
+
 def test_training_downsampling_beyond_four(tmp_path):
     alignment_file = _make_dataset(tmp_path)
     data, _, _, boundary, _ = _load(tmp_path, _cleaning(alignment_file), downsample=8)
     assert np.asarray(data).shape[-2:] == (16, 16)
     assert np.asarray(boundary).shape[-2:] == (16, 16)
     assert np.asarray(data).max() <= 1.0
+
+
+def test_excluded_measurement_leaves_the_other_channels_unchanged(tmp_path):
+    alignment_file = _make_dataset(tmp_path)
+    full, full_aux, full_names, _, _ = _load(tmp_path, _cleaning(alignment_file))
+    excluded, aux, names, _, mask = _load(
+        tmp_path, _cleaning(alignment_file), excluded_measurements=("cell_fate_s1/SOX17",)
+    )
+    assert names == [name for name in full_names if name != "cell_fate_s1/SOX17"]
+    assert np.asarray(mask).shape[-1] == 3
+    # Cleaned images keep every channel of the group, so each remaining
+    # channel (LMBR differs from the others here) must be read from its own
+    # position in them.
+    keep = [full_names.index(name) for name in names]
+    np.testing.assert_allclose(np.asarray(excluded), np.asarray(full)[:, :, keep])
+    for trajectory, bounds in aux["trajectory_bounds"].items():
+        for name in names:
+            assert bounds[name] == pytest.approx(full_aux["trajectory_bounds"][trajectory][name])
 
 
 def test_cleaning_errors(tmp_path):
@@ -178,21 +239,39 @@ def test_cleaning_errors(tmp_path):
         MicropatternCleaningConfig(enabled=True)
     with pytest.raises(FileNotFoundError, match="Export it"):
         _load(tmp_path, _cleaning(tmp_path / "missing.yaml"))
+    with pytest.raises(ValueError, match="Unknown channels.*horizontal_stripe_widths"):
+        _cleaning(alignment_file, horizontal_stripe_widths={"TBXT": 20})
+    with pytest.raises(ValueError, match="vertical_stripe_widths must be non-negative"):
+        _cleaning(alignment_file, vertical_stripe_widths={"cell_fate_s1/TBXT": -1})
+    with pytest.raises(ValueError, match="stripe_block must be non-negative"):
+        _cleaning(alignment_file, stripe_block=-1)
+
+
+def test_stripe_removal_is_off_by_default_and_runs_when_set(tmp_path):
+    alignment_file = _make_dataset(tmp_path)
+    cleaning = _cleaning(alignment_file)
+    assert not cleaning.horizontal_stripe_widths and not cleaning.vertical_stripe_widths
+    plain = _load(tmp_path, cleaning)
+    destriped = _load(
+        tmp_path,
+        _cleaning(alignment_file, horizontal_stripe_widths={"cell_fate_s1/TBXT": 8}, stripe_block=32),
+    )
+    assert np.asarray(destriped.data).shape == np.asarray(plain.data).shape
 
 
 def test_alignment_file_round_trip(tmp_path):
     alignment = ColonyAlignment(
         pattern_radius=401.234,
-        centres={"a/b.tif": (540.5, 530.25)},
-        details={"a/b.tif": {"automatic": (541.0, 532.0), "manual": (-0.5, -1.75), "score": 0.97}},
+        centres={"a/b": (540.5, 530.25)},
+        details={"a/b": {"automatic": (541.0, 532.0), "manual": (-0.5, -1.75), "score": 0.97}},
         settings={"edge_width": 0.08},
     )
     path = tmp_path / "nested" / "alignment.yaml"
     save_colony_alignment(path, alignment)
     loaded = load_colony_alignment(path)
     assert loaded.pattern_radius == pytest.approx(401.23)
-    assert loaded.centres == {"a/b.tif": (540.5, 530.25)}
-    assert loaded.details["a/b.tif"]["manual"] == [-0.5, -1.75]
+    assert loaded.centres == {"a/b": (540.5, 530.25)}
+    assert loaded.details["a/b"]["manual"] == [-0.5, -1.75]
     assert loaded.settings == {"edge_width": 0.08}
 
 
@@ -209,7 +288,7 @@ def test_fit_colony_centre_finds_an_off_centre_colony():
 
 def test_flagged_images_are_unmeasured_and_filled_from_other_replicates(tmp_path):
     alignment_file = _make_dataset(tmp_path)
-    flagged = "cell_fate_markers/ctrl_s1/sample_1_24h.ome.tif"
+    flagged = "cell_fate_markers/ctrl_s1_max/sample_1_24h.ome.tif"
     clean, clean_aux, names, _, clean_mask = _load(tmp_path, _cleaning(alignment_file, normalisation="replicate_mean"))
     data, aux, _, _, mask = _load(
         tmp_path,
@@ -217,7 +296,7 @@ def test_flagged_images_are_unmeasured_and_filled_from_other_replicates(tmp_path
         excluded_images=[flagged, "some/other/image.tif"],
     )
     data, mask, clean = np.asarray(data), np.asarray(mask), np.asarray(clean)
-    assert aux["excluded_images"] == (flagged,)
+    assert aux["excluded_images"] == ("cell_fate_markers/ctrl_s1/sample_1_24h",)
     # Replicate 1 at 24h (time index 1) is unmeasured in every stain-1 channel ...
     assert not mask[0, 1].any() and mask[1, 1].all() and mask[0, [0, 2]].all()
     assert aux["excluded"][0, 1, 0] and aux["imputed"][0, 1, 0]
@@ -233,8 +312,8 @@ def test_quality_flags_file_round_trip(tmp_path):
     from Common.dataloader.quality_flags import load_quality_flags, save_quality_flags
 
     path = tmp_path / "flags" / "quality.yaml"
-    save_quality_flags(path, {"b.tif": "blurred", "a.tif": ""})
-    assert load_quality_flags(path) == {"a.tif": "", "b.tif": "blurred"}
+    save_quality_flags(path, {"b": "blurred", "a": ""})
+    assert load_quality_flags(path) == {"a": "", "b": "blurred"}
     save_quality_flags(path, {})
     assert load_quality_flags(path) == {}
     with pytest.raises(FileNotFoundError, match="Export it"):
@@ -255,7 +334,7 @@ def test_cache_gives_the_same_data_and_skips_cleaning(tmp_path, monkeypatch):
     expected = [_load(dataset, per_replicate), _load(dataset, shared)]
     cached = [_load(dataset, per_replicate, cache_dir=cache)]
     [entry] = list_cache_folders(cache)
-    assert entry["items"] == len(CENTRES) - 2  # the knockout images are not loaded
+    assert entry["items"] == 6  # only the control images are loaded
 
     def no_cleaning(*args, **kwargs):
         raise AssertionError("cleaned again instead of reading the cache")

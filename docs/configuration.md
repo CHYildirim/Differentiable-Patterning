@@ -54,10 +54,14 @@ registry always keeps the full tags.
 
 ## Older configs
 
-Current files have `schema_version: 7`. Older configs are translated when read
+Current files have `schema_version: 9`. Older configs are translated when read
 by `upgrade_legacy_config`, the only place old spellings are handled. Each
 upgrade fills in the values the code used before, so old runs and bundles load
 the same data they were trained on:
+
+- **8** removed `impulse.output` (a folder for loose impulse result files).
+  Impulse runs now save records in the model store
+  (`docs/model_registry.md`); older impulse configs just drop the section.
 
 - **7** added `data.snowmelt.version` (`v1` or `v2`, the dataset folder under
   `data.snowmelt.root`). Older snowmelt configs get `v1` and, if they used
@@ -93,35 +97,62 @@ settings** and exports the alignment file. The steps are described in
    timestep (hours), for every condition, to correct imaging artifacts.
 2. Hot pixels (isolated bright specks) are replaced by the mean of their
    neighbours, per channel (`cleaning.hot_pixel_thresholds`, 0 = off).
-3. A rolling-ball background is subtracted per channel
+3. Narrow horizontal or vertical bands of raised background (e.g. from tile
+   stitching in sum projections) are removed per channel
+   (`cleaning.horizontal_stripe_widths`, `cleaning.vertical_stripe_widths`:
+   largest band width in full-resolution pixels, 0 or absent = off; see
+   `Common/dataloader/stripes.py`). For seams that cover only part of a row,
+   `cleaning.stripe_block` estimates the background in pieces of that many
+   pixels along the row (0 = whole rows).
+4. A rolling-ball background is subtracted per channel
    (`cleaning.background_radii` in full-resolution pixels, 0 = off).
-4. The images are block-averaged to downsampling 4 (the notebook's), or to
+5. The images are block-averaged to downsampling 4 (the notebook's), or to
    the training downsampling if it is not a multiple of 4.
-5. Each colony is centred with the centres in `cleaning.alignment_file`, and
+6. Each colony is centred with the centres in `cleaning.alignment_file`, and
    masked with a disk of the pattern radius times `cleaning.mask_radius_scale`.
-6. Each channel is rescaled linearly to [0, 1] between a low and a high
+7. Each channel is rescaled linearly to [0, 1] between a low and a high
    percentile (`histogram_percentiles`, or `cleaning.channel_percentiles` per
    channel), taken over all timesteps of a trajectory (inside the mask with
    `percentiles_inside_mask`), so brightness can still be compared over time.
    `cleaning.normalisation` sets how trajectories share these bounds:
    `replicate_mean` (each trajectory's bounds, averaged), `per_replicate` (own
-   bounds) or `pooled` (all pixels together). With
-   `knockouts_use_control_bounds`, knockouts take their bounds from the
-   control data, so a knockout's change in overall intensity is kept.
-7. Pixels outside the mask are zeroed and the images are block-averaged to
+   bounds) or `pooled` (all pixels together). `cleaning.knockout_bounds` sets
+   how knockouts get their bounds:
+   - `selected`: like any other loaded trajectory.
+   - `control`: from the control data, so a knockout's change in overall
+     intensity is kept (values outside the control range are clipped).
+   - `joint`: each condition (`ctrl`, `sl0`, `sl24`) is normalised on its
+     own, then every condition uses the widest range (per replicate with
+     `per_replicate`). Control bounds stay the same unless a knockout goes
+     outside them, and a dim knockout channel stays dim instead of having
+     its noise stretched to [0, 1]. Every load reads all three conditions to
+     find these bounds. Stainings are still normalised separately.
+8. Pixels outside the mask are zeroed and the images are block-averaged to
    the training downsampling.
+
+The cell-fate and protein response stainings are thin 3D confocal stacks.
+`data.micropattern.projection` chooses which 2D version is loaded: `max`
+(default), `sum` or `slice`, read from
+`cell_fate_markers/<condition>_s<n>_{max,sums,slices}/` and
+`signalling/protein_response/<condition>_{max,sums,slices}/`. One run never
+mixes them. The RNA was imaged in 2D, so it is the same for every projection
+(see `Common/dataloader/micropattern_projections.py`). Settings tuned on one
+projection (e.g. intensity factors) may need tuning again for another.
 
 With shared bounds, validation replicates reuse the bounds of the training
 replicates; with `per_replicate`, each replicate sets its own.
 
 The alignment file is computed once in the notebook (an automatic
 fixed-radius fit, then manual corrections) and lists the colony centre of
-every image, keyed by its path relative to the dataset root. A relative
-`alignment_file` is resolved against the repository root.
+every image, keyed by its path relative to the dataset root without the
+projection (e.g. `cell_fate_markers/ctrl_s1/A2_F14_24h`), so one file serves
+the max, sum and slice images. A relative `alignment_file` is resolved
+against the repository root.
 
 ```yaml
 data:
   micropattern:
+    projection: max
     histogram_percentiles: [20.0, 99.5]
     intensity_factors:
       cell_fate_s1/SOX17: {0: 0.3}
@@ -133,19 +164,22 @@ data:
       hot_pixel_thresholds: {cell_fate_s1/SOX17: 30.0, ...}
       background_shrink: 4
       background_radii: {cell_fate_s1/SOX17: 50, ...}
+      horizontal_stripe_widths: {cell_fate_s1/TBXT: 20}
+      vertical_stripe_widths: {}
+      stripe_block: 0
       alignment_file: Experiments/micropatterns/conf/alignment/260726_alignment.yaml
       mask_radius_scale: 1.0
       normalisation: replicate_mean
       channel_percentiles: {}
       percentiles_inside_mask: true
-      knockouts_use_control_bounds: false
+      knockout_bounds: selected
 ```
 
 Images can also be flagged as low quality in the notebook (**Manual
 centring**) and exported as a quality flags file (**Quality flags**), set as
 `data.micropattern.quality_flags_file` (relative to the repository root;
-null for none). Each flag is one image file, so one experiment group at one
-timestep of one replicate. Training treats a flagged image as not measured:
+null for none). Each flag is one image, so one experiment group at one
+timestep of one replicate; like the alignment, it holds for every projection. Training treats a flagged image as not measured:
 its channels are off in the measurement mask, so the loss and reinjection
 skip them, and it does not count towards the normalisation bounds. The
 replicate's other groups and timesteps are kept. Because the NCA pool is
