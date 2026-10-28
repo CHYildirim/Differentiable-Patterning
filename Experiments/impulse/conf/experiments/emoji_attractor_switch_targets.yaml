@@ -29,25 +29,25 @@ transitions:
 
 grid:
   checkpoint.model_id:
-    - REPLACE_GNCA_2_1  
-    - REPLACE_GNCA_2_2  
-    - REPLACE_GNCA_2_3  
-    - REPLACE_GNCA_2_4  
-    - REPLACE_GNCA_2_5  
-    - REPLACE_GNCA_2_6  
-    - REPLACE_GNCA_2_7  
-    - REPLACE_GNCA_2_8  
-    - REPLACE_GNCA_2_9  
-    - REPLACE_GNCA_3_1  
-    - REPLACE_GNCA_3_2  
-    - REPLACE_GNCA_3_3  
-    - REPLACE_GNCA_4_1  
-    - REPLACE_GNCA_4_2  
-    - REPLACE_GNCA_4_3  
-    - REPLACE_GNCA_4_4  
-    - REPLACE_GNCA_4_5  
+    - 20261026T040356Z-cfge66af73e8a70-42e3ad4b
+    - 20261023T185857Z-cfga0fdd8fb7b25-70e158da
+    - 20261026T235906Z-cfg2c9e6dc547a1-4544ed55
+    - 20261024T150505Z-cfg0d4e9d3c9d80-52c43b23
+    - 20261024T090958Z-cfg434572371eea-e18e4e7b
+    - 20261026T071022Z-cfg0dcb13daedb7-93a30518
+    - 20261023T142637Z-cfga0fdd8fb7b25-0a3a19b4
+    - 20261024T015827Z-cfg9d9da6c5937e-964742ee
+    - 20261024T172132Z-cfgc928f41dc9a3-8bbd1b55
+    - 20261023T224330Z-cfg01e740d58ea1-6a8f9d16
+    - 20261024T083302Z-cfg5f51dcaeb149-4caed1f5
+    - 20261025T161633Z-cfg271c5c53e5b7-1fb00d10
+    - 20261026T092754Z-cfg014b1c2a899f-6519bf16
+    - 20261025T041603Z-cfg37dc64056bc5-e98e3ca4
+    - 20261024T054232Z-cfg9e80879458dd-97726ed2
+    - 20261024T032207Z-cfg49e4af4e33e2-899feaed
+    - 20261024T001616Z-cfg63d0592ad4ec-7934f3b9
     
-  impulse.iterations: [8000]
+  impulse.iterations: [4000]
   impulse.pair_source.type: [stable_attractor]
   impulse.objective.type: [targeted]
   # impulse.rollout.steps: [256]
@@ -60,63 +60,63 @@ grid:
   impulse.loss.regularisers.l2: [0.0]
   impulse.repeat: [0]
 groups:
-  - impulse.intervention.patch_size: [9, 3, 1]
-    impulse.intervention.duration: [1, 9, 81]
-    impulse.intervention.budget: [81, 81, 81]
-  - impulse.rollout.steps: [128,256,512]
-    impulse.rollout.loss_window: [32,64,128]
-    impulse.rollout.scan_kind: [lax,lax,checkpointed]
-    impulse.rollout.checkpoints: [null, null, 512]
+  - impulse.intervention.patch_size: [9]
+    impulse.intervention.duration: [1]
+    impulse.intervention.budget: [81]
+  - impulse.rollout.steps: [256,512]
+    impulse.rollout.loss_window: [64,128]
+    impulse.rollout.scan_kind: [lax,checkpointed]
+    impulse.rollout.checkpoints: [null, 512]
 # One branch per model: its transitions and W&B tags for filtering
 branches:
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_1}
+  - when: {checkpoint.model_id: 20261026T040356Z-cfge66af73e8a70-42e3ad4b}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.1]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_2}
+  - when: {checkpoint.model_id: 20261023T185857Z-cfga0fdd8fb7b25-70e158da}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.2]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_3}
+  - when: {checkpoint.model_id: 20261026T235906Z-cfg2c9e6dc547a1-4544ed55}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.3]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_4}
+  - when: {checkpoint.model_id: 20261024T150505Z-cfg0d4e9d3c9d80-52c43b23}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.4]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_5}
+  - when: {checkpoint.model_id: 20261024T090958Z-cfg434572371eea-e18e4e7b}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.5]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_6}
+  - when: {checkpoint.model_id: 20261026T071022Z-cfg0dcb13daedb7-93a30518}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.6]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_7}
+  - when: {checkpoint.model_id: 20261023T142637Z-cfga0fdd8fb7b25-0a3a19b4}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.7]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_8}
+  - when: {checkpoint.model_id: 20261024T015827Z-cfg9d9da6c5937e-964742ee}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.8]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_2_9}
+  - when: {checkpoint.model_id: 20261024T172132Z-cfgc928f41dc9a3-8bbd1b55}
     grid: {logging.wandb.tags: [[attractors:2, attractor_set:2.9]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_GNCA_3_1}
+  - when: {checkpoint.model_id: 20261023T224330Z-cfg01e740d58ea1-6a8f9d16}
     grid: {logging.wandb.tags: [[attractors:3, attractor_set:3.1]]}
     groups: [*k3]
-  - when: {checkpoint.model_id: REPLACE_GNCA_3_2}
+  - when: {checkpoint.model_id: 20261024T083302Z-cfg5f51dcaeb149-4caed1f5}
     grid: {logging.wandb.tags: [[attractors:3, attractor_set:3.2]]}
     groups: [*k3]
-  - when: {checkpoint.model_id: REPLACE_GNCA_3_3}
+  - when: {checkpoint.model_id: 20261025T161633Z-cfg271c5c53e5b7-1fb00d10}
     grid: {logging.wandb.tags: [[attractors:3, attractor_set:3.3]]}
     groups: [*k3]
-  - when: {checkpoint.model_id: REPLACE_GNCA_4_1}
+  - when: {checkpoint.model_id: 20261026T092754Z-cfg014b1c2a899f-6519bf16}
     grid: {logging.wandb.tags: [[attractors:4, attractor_set:4.1]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_GNCA_4_2}
+  - when: {checkpoint.model_id: 20261025T041603Z-cfg37dc64056bc5-e98e3ca4}
     grid: {logging.wandb.tags: [[attractors:4, attractor_set:4.2]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_GNCA_4_3}
+  - when: {checkpoint.model_id: 20261024T054232Z-cfg9e80879458dd-97726ed2}
     grid: {logging.wandb.tags: [[attractors:4, attractor_set:4.3]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_GNCA_4_4}
+  - when: {checkpoint.model_id: 20261024T032207Z-cfg49e4af4e33e2-899feaed}
     grid: {logging.wandb.tags: [[attractors:4, attractor_set:4.4]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_GNCA_4_5}
+  - when: {checkpoint.model_id: 20261024T001616Z-cfg63d0592ad4ec-7934f3b9}
     grid: {logging.wandb.tags: [[attractors:4, attractor_set:4.5]]}
     groups: [*k4]
