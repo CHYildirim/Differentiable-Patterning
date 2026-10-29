@@ -158,41 +158,51 @@ with app.setup(hide_code=True):
         values = np.asarray(values, dtype=float)
         return np.sign(values) * np.log10(1.0 + np.abs(values) / c)
 
-    def start_log_axes(paths, magnify):
-        """Log axes around the start points: for every target k, (centre, c) with centre the middle of
-        the start points' similarities to k and c their spread / ``magnify``. An axis then shows
-        symlog(similarity - centre, c): the start points spread over its middle (about ±log10(magnify / 2)
-        decades), and further away it is logarithmic, so the whole paths still fit."""
+    # Start axes: anchored at the lowest start point, so the start points sit at the bottom left.
+    # Half of the axis is logarithmic in the offset from that point (the start points, which differ
+    # only by about 1e-4, spread out), the other half linear (the course of the paths keeps its
+    # shape further out). An axis is (anchor, c, top): offsets below c are linear, ``top`` is the
+    # largest offset shown.
+    START_LOG_SHARE = 0.5
+
+    def start_axes(paths, magnify, low, high):
+        """(anchor, c, top) for every target: anchor = the lowest start point, c = the spread of the
+        start points / ``magnify``, top = the largest |offset| between the similarities low and high."""
         starts = np.concatenate([path["sim"][:, 0, :] for path in paths], axis=0)
         axes = {}
         for k in range(starts.shape[1]):
             values = starts[:, k][np.isfinite(starts[:, k])]
-            if not values.size:
-                axes[k] = (0.0, 1e-4)
-                continue
-            centre = float(values.min() + values.max()) / 2
-            spread = float(values.max() - values.min())
-            c = spread / magnify if spread > 0 else max(abs(centre), 1e-6) / magnify
-            axes[k] = (centre, max(c, 1e-12))
+            anchor = float(values.min()) if values.size else 0.0
+            spread = float(values.max() - values.min()) if values.size else 0.0
+            c = spread / magnify if spread > 0 else max(abs(anchor), 1e-6) / magnify
+            axes[k] = (anchor, max(c, 1e-12), max(abs(high[k] - anchor), abs(low[k] - anchor), 1e-9))
         return axes
 
-    def offset_ticks(low, high, centre, c):
-        """Ticks of a start-centred log axis for similarities from low to high: the centre (0) and
-        offsets ±10^m from it, one per decade (every second one when there are many)."""
-        top = max(abs(high - centre), abs(low - centre))
-        decades = ([10.0 ** m for m in range(math.ceil(math.log10(c)), math.floor(math.log10(top)) + 1)]
-                   if top > c else [])
-        if len(decades) > 6:
-            decades = decades[::-1][::2][::-1]
-        offsets = [d for d in sorted({0.0, *decades, *[-d for d in decades]}) if low <= centre + d <= high]
+    def start_scale(values, axis):
+        """Position of similarities on a start axis: 0 = the lowest start point, 1 = ``top`` above it.
+        Above the lowest start point half logarithmic, half linear; below it (paths that end up less
+        similar than any start) linear only, with the slope of the linear half, so it takes little room."""
+        anchor, c, top = axis
+        offset = np.asarray(values, dtype=float) - anchor
+        above = np.clip(offset, 0.0, None)
+        logarithmic = np.log10(1.0 + above / c) / np.log10(1.0 + top / c)
+        return np.where(offset >= 0, START_LOG_SHARE * logarithmic + (1 - START_LOG_SHARE) * above / top,
+                        (1 - START_LOG_SHARE) * offset / top)
 
-        def label(offset):
-            if offset == 0:
-                return "0"
-            power = round(math.log10(abs(offset)))
-            return ("+" if offset > 0 else "−") + (f"{10.0 ** power:g}" if power >= -2 else f"1e{power}")
-
-        return symlog(offsets, c), [label(offset) for offset in offsets]
+    def start_ticks(axis, low, high):
+        """Ticks of a start axis between the positions low and high: near the start points the offsets
+        from the lowest one (+1e-6, +1e-5, …), further out the similarities themselves (0.1, 0.5, 1)."""
+        anchor, c, top = axis
+        near = [10.0 ** m for m in range(math.ceil(math.log10(c)), -1)]
+        candidates = [(0.0, "+0")] + [(d, f"+1e{round(math.log10(d))}") for d in near] \
+            + [(v - anchor, f"{v:g}") for v in (-1.0, -0.5, -0.25, -0.1, 0.1, 0.25, 0.5, 0.75, 1.0)]
+        ticks = sorted((float(start_scale(anchor + offset, axis)), label) for offset, label in candidates)
+        kept = []
+        for position, label in ticks:
+            # Inside the range, and not closer than 4 % of it to the tick before
+            if low <= position <= high and (not kept or position - kept[-1][0] > 0.04 * (high - low)):
+                kept.append((position, label))
+        return [position for position, _ in kept], [label for _, label in kept]
 
     def similarity_limits(paths, target_sim):
         """Common axis range: from 0 (or lower, if a path goes there) to just past 1."""
@@ -211,15 +221,16 @@ with app.setup(hide_code=True):
 
         Arrows go from the state at step t to the state at step t + ``stride``, so they chain
         along the path and their length is the distance covered in ``stride`` steps. With
-        ``log`` ({target: (centre, c)}, see ``start_log_axes``) both axes show
-        symlog(similarity - centre, c), centred on the start points; the arrows still join the
-        same steps, but their length is no longer proportional to the speed.
+        ``log`` ({target: (anchor, c, top)}, see ``start_axes``) both axes are start axes: the
+        start points at the bottom left, logarithmic near them, linear further out; ``limits``
+        is then {target: (low, high)} in similarities. The arrows still join the same steps, but
+        their length is no longer proportional to the speed.
         """
         if log is None:
             fx = fy = (lambda v: np.asarray(v, dtype=float))
         else:
-            fx = (lambda v: symlog(np.asarray(v, dtype=float) - log[i][0], log[i][1]))
-            fy = (lambda v: symlog(np.asarray(v, dtype=float) - log[j][0], log[j][1]))
+            fx = (lambda v: start_scale(v, log[i]))
+            fy = (lambda v: start_scale(v, log[j]))
         for path in paths:
             small = path.get("small", False)
             for r, sim in enumerate(path["sim"]):
@@ -248,21 +259,24 @@ with app.setup(hide_code=True):
         for value in (0.0, 1.0):
             ax.axvline(fx(value), color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
             ax.axhline(fy(value), color="#bbbbbb", lw=0.8, ls="-" if value == 0 else "--", zorder=0)
-        ax.set_xlim(fx(np.asarray(limits)))
-        ax.set_ylim(fy(np.asarray(limits)))
         if log is None:
+            ax.set_xlim(limits)
+            ax.set_ylim(limits)
             ax.set_aspect("equal")
             ax.set_xlabel(f"similarity to {names[i]}")
             ax.set_ylabel(f"similarity to {names[j]}")
         else:
             ax.set_box_aspect(1)
-            ax.set_xlabel(f"similarity to {names[i]} − {log[i][0]:.3g}\n(log around the start points)")
-            ax.set_ylabel(f"similarity to {names[j]} − {log[j][0]:.3g}\n(log around the start points)")
-            positions, labels = offset_ticks(*limits, *log[i])
-            ax.set_xticks(positions, labels, fontsize=7, rotation=45)
-            positions, labels = offset_ticks(*limits, *log[j])
-            ax.set_yticks(positions, labels, fontsize=7)
-            # The start points' centre
+            for k, set_limits, set_ticks, set_label, rotation in (
+                    (i, ax.set_xlim, ax.set_xticks, ax.set_xlabel, 45), (j, ax.set_ylim, ax.set_yticks, ax.set_ylabel, 0)):
+                low, high = start_scale(np.asarray(limits[k]), log[k])
+                margin = 0.03 * (high - low)
+                set_limits(low - margin, high + margin)
+                positions, labels = start_ticks(log[k], low - margin, high + margin)
+                set_ticks(positions, labels, fontsize=7, rotation=rotation)
+                set_label(f"similarity to {names[k]}\n(near the start: + offset from {log[k][0]:.3g}, log; "
+                          "further out linear)", fontsize=8)
+            # The lowest start point on each axis
             ax.axvline(0.0, color="#d0d0d0", lw=0.6, ls=":", zorder=0)
             ax.axhline(0.0, color="#d0d0d0", lw=0.6, ls=":", zorder=0)
         style_axes(ax)
@@ -311,7 +325,7 @@ with app.setup(hide_code=True):
         ``similarity_plane``."""
         x, y, stable = plane["sim"][..., i], plane["sim"][..., j], plane["stable"]
         if log is not None:
-            x, y = symlog(x - log[i][0], log[i][1]), symlog(y - log[j][0], log[j][1])
+            x, y = start_scale(x, log[i]), start_scale(y, log[j])
         for k in range(-1, n_targets):
             region = (stable == k).astype(float)
             if not region.any():
@@ -336,6 +350,97 @@ with app.setup(hide_code=True):
                    label="target image"),
         ]
         return handles
+
+    # ------------------------------------------------------------------
+    # PCA of the states: the same paths as in the velocity map, on principal components.
+    # ``paths`` as above, with "pcs" [rollout, kept state, component] instead of "sim".
+
+    def pca_limits(paths, targets, mode):
+        """Range of every component: of all points ("all"), or of the start points with a margin
+        ("start", to see how the start points lie)."""
+        if mode == "start":
+            points = np.concatenate([path["pcs"][:, 0] for path in paths])
+            margin = 0.25
+        else:
+            points = np.concatenate([path["pcs"].reshape(-1, path["pcs"].shape[-1]) for path in paths]
+                                    + ([targets] if targets is not None else []))
+            margin = 0.06
+        points = points[np.isfinite(points).all(axis=1)]
+        low, high = points.min(axis=0), points.max(axis=0)
+        span = np.maximum(high - low, 1e-9 * max(np.abs(points).max(), 1e-12))
+        return np.stack([low - margin * span, high + margin * span], axis=-1)
+
+    def pca_plane(ax, a, b, paths, explained, stride, limits, targets=None, names=None, zoom=False):
+        """Components a (x) and b (y). Arrows join kept states ``stride`` apart, so their length is
+        the distance moved in the (standardised) state space. ``targets`` [n, k]: target images as
+        stars. ``zoom``: the axes are fitted to the start points and scaled independently; otherwise
+        both axes have the same scale, unless one range is more than 4 times the other (then the
+        plane is stretched to a square and the axis labels say so)."""
+        for path in paths:
+            small = path.get("small", False)
+            for r, pcs in enumerate(path["pcs"]):
+                ax.plot(pcs[:, a], pcs[:, b], color=path["colour"], ls=path["style"], lw=0.9 if small else 1,
+                        alpha=0.8 if small else 0.45, zorder=2)
+                at, step = path_arrows(pcs, stride)
+                ax.quiver(at[:, a], at[:, b], step[:, a], step[:, b], angles="xy", scale_units="xy", scale=1,
+                          color=path["colour"], width=0.003 if small else 0.005, headwidth=4, headlength=5,
+                          headaxislength=4.5, minlength=0, zorder=3, edgecolor="#333333" if small else None,
+                          linewidth=0.3 if small else 0)
+                size = (28 if small else 55) * (1.6 if zoom else 1.0)
+                ax.scatter(pcs[0, a], pcs[0, b], s=size, color=path["colour"], edgecolor="black",
+                           lw=0.6 if small else 1.0, zorder=4)
+                ax.scatter(pcs[-1, a], pcs[-1, b], s=22 if small else 45, marker="s", color=path["colour"],
+                           edgecolor="black", lw=0.6 if small else 1.0, zorder=4)
+                if zoom and not small and r == 0 and path.get("label"):
+                    ax.annotate(path["label"], (pcs[0, a], pcs[0, b]), xytext=(6, -10), textcoords="offset points",
+                                fontsize=7, color=path["colour"])
+        if targets is not None:
+            for k, name in enumerate(names):
+                ax.scatter(targets[k, a], targets[k, b], marker="*", s=260, color=outcome_colour(k),
+                           edgecolor="black", lw=0.8, zorder=5)
+                ax.annotate(name, (targets[k, a], targets[k, b]), xytext=(7, 5), textcoords="offset points",
+                            fontsize=8)
+        ax.set_xlim(limits[a])
+        ax.set_ylim(limits[b])
+        # Same scale on both axes (true distances), unless one range is much smaller than the other
+        spans = np.diff(limits[a])[0], np.diff(limits[b])[0]
+        stretched = zoom or max(spans) > 4 * min(spans)
+        if stretched:
+            ax.set_box_aspect(1)
+        else:
+            ax.set_aspect("equal")
+        note = " – stretched" if stretched and not zoom else ""
+        ax.set_xlabel(f"PC{a + 1} ({explained[a]:.1%} of the variance){note}")
+        ax.set_ylabel(f"PC{b + 1} ({explained[b]:.1%} of the variance){note}")
+        ax.axhline(0.0, color="#d8d8d8", lw=0.6, zorder=0)
+        ax.axvline(0.0, color="#d8d8d8", lw=0.6, zorder=0)
+        style_axes(ax)
+
+    def pca_components_figure(pca, count=3):
+        """What the first components are: where in the grid (loadings summed over the channels;
+        red / blue = the state grows / shrinks there along the component) and which channels
+        (share of the squared loadings; RGBA blue, hidden grey)."""
+        count = min(count, len(pca["components"]))
+        fig, axes = plt.subplots(2, count, figsize=(3.3 * count, 5.6), squeeze=False,
+                                 gridspec_kw={"height_ratios": [1.0, 0.55]})
+        names = [("R", "G", "B", "A")[c] if c < 4 else f"h{c - 4}" for c in pca["channels"]]
+        for k in range(count):
+            component = pca["components"][k]
+            spatial = component.sum(axis=0)
+            limit = max(float(np.abs(spatial).max()), 1e-12)
+            axes[0, k].imshow(spatial, cmap="RdBu_r", vmin=-limit, vmax=limit, interpolation="nearest")
+            axes[0, k].set_xticks([])
+            axes[0, k].set_yticks([])
+            axes[0, k].set_title(f"PC{k + 1} ({pca['explained'][k]:.1%}): where", fontsize=9)
+            energy = (component ** 2).sum(axis=(1, 2))
+            energy = energy / max(energy.sum(), 1e-300)
+            axes[1, k].bar(range(len(energy)), energy,
+                           color=["#2a78d6" if c < 4 else "#9a9a9a" for c in pca["channels"]])
+            axes[1, k].set_xticks(range(len(energy)), names, fontsize=6, rotation=90)
+            axes[1, k].set_title("which channels", fontsize=8)
+            style_axes(axes[1, k])
+        fig.tight_layout()
+        return fig
 
     def _sides(first, second):
         """Colours of the two sides of a boundary: a stable one first, None for an unstable side."""
@@ -1753,11 +1858,11 @@ def _():
     - The thin line is the path at every step, the arrows only every *arrow spacing* steps. Where the state
       hardly changes any more (at the end, close to its attractor) the arrows become shorter than their heads
       and vanish behind the line: there the run is (nearly) at rest
-    - *Axes*: the planes also with logarithmic axes centred on the start points: each axis shows
-      symlog(similarity − centre, c) = sign · log10(1 + |similarity − centre| / c), with the centre in the middle
-      of the start points and c = their spread / *magnify*. The start points (which all sit close together just
-      above 0) fill the middle of the plot, so their positions relative to each other are visible; further out the
-      axis is logarithmic (one decade per tick, labelled as offset from the centre), so the whole paths still fit
+    - *Axes*: the planes also with start axes. Each axis starts at the lowest start point (bottom left); half of
+      its length is logarithmic in the offset d from there, log10(1 + d / c) with c = spread of the start points /
+      *magnify*, the other half linear in d. Near the start points (which differ only by about 1e-4) it is
+      logarithmic, so their positions relative to each other are visible (ticks: + offset from the lowest start
+      point); further out it becomes linear, so the course of the paths keeps its shape (ticks: the similarity)
     - *Colours between the trained seeds*: *per pair of seeds* start points evenly between every two training
       seeds (the whole seeds are mixed), one rollout each with the same random keys, drawn thin in their start
       colour (pixel seeds that only differ in their hidden code: a blend of their targets' colours). They are not
@@ -1916,8 +2021,14 @@ def _(
     _target_sim = ma.target_similarity(explore_targets)
     _background = start_planes if velocity_background.value else None
     _limits = similarity_limits(_paths + [{"sim": _plane["sim"]} for _plane in _background or []], _target_sim)
-    # Log axes centred on the start points of the drawn paths
-    _log = start_log_axes(_paths, velocity_magnify.value)
+    # Start axes for the log view: range of everything drawn on each axis (no padding below, so the start
+    # points sit at the bottom left unless something goes below them), anchored at the lowest start point
+    _values = np.concatenate([_target_sim] + [_p["sim"].reshape(-1, _n) for _p in _paths]
+                             + [_plane["sim"].reshape(-1, _n) for _plane in _background or []])
+    _low = np.nanmin(np.where(np.isfinite(_values), _values, np.nan), axis=0)
+    _high = np.maximum(np.nanmax(np.where(np.isfinite(_values), _values, np.nan), axis=0), 1.0)
+    _log = start_axes(_paths, velocity_magnify.value, _low, _high)
+    _log_limits = {_k: (float(_low[_k]), float(_high[_k])) for _k in range(_n)}
     _stride = velocity_stride.value
     _planes = list(itertools.combinations(range(_n), 2))
     _legend = similarity_legend(_paths) + _between_legend + (start_basin_legend(explore_names) if _background else [])
@@ -1943,8 +2054,8 @@ def _(
         for _k, (_ax, (_i, _j)) in enumerate(zip(_axes.flat, _planes)):
             if _background:
                 start_basin_background(_ax, _background[_k], _i, _j, _n, log=_log if _scale == "log" else None)
-            similarity_plane(_ax, _i, _j, _paths, _target_sim, explore_targets, explore_names, _stride, _limits,
-                             log=_log if _scale == "log" else None)
+            similarity_plane(_ax, _i, _j, _paths, _target_sim, explore_targets, explore_names, _stride,
+                             _log_limits if _scale == "log" else _limits, log=_log if _scale == "log" else None)
         for _ax in _axes.flat[len(_planes):]:
             _ax.axis("off")
         # The legend in a margin on the right
@@ -1952,9 +2063,9 @@ def _(
         _fig.legend(handles=_legend, loc="center left", bbox_to_anchor=(1 - 2.7 / _width, 0.5), frameon=False,
                     fontsize=8)
         _fig.suptitle("linear axes" if _scale == "linear" else
-                      "logarithmic axes centred on the start points: ticks are offsets from the centre given at "
-                      "each axis,\nlinear within ±c = start spread / " f"{velocity_magnify.value:g}, one decade per "
-                      "tick beyond; the arrows join the same steps as in the linear plot", fontsize=9)
+                      "start points at the bottom left: near them logarithmic (+ offsets from the lowest start "
+                      "point),\nfurther out linear, so the paths keep their shape; the arrows join the same steps "
+                      "as in the linear plot", fontsize=9)
         _figures.append(_fig)
 
     # Similarity to the end attractor (the closest target at the end) and its velocity per step
@@ -1980,6 +2091,212 @@ def _(
     _ax_v.set_title(f"moving average over {velocity_smooth.value} steps; dotted: run.t", fontsize=9)
     _fig_v.tight_layout()
     mo.vstack([mo.hstack(_figures, justify="start", align="start", wrap=True), _fig_v])
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ### PCA of the states
+
+    - The same runs as in the velocity map (its *start signals*, *Rollouts*, *Length* and, when ticked, the colours
+      between the trained seeds), but placed by their whole state instead of the similarity to the targets: a PCA
+      of the states (every channel at every pixel, or RGBA only) kept every *keep every* steps
+    - The axes are the directions in which these states differ most (PC1, PC2, …, with their share of the
+      variance). They are not fixed in advance, so states that resemble neither target, and differences only in the
+      hidden channels (e.g. pixel seeds with different hidden codes), show up as well
+    - *Standardise*: every channel is divided by its spread, so channels with large values do not dominate
+    - *Fit on*: the PCA is computed from the whole paths, only their *first … steps*, or only the start states, and
+      then all states are placed with it. Fitted on the first steps (or the starts), the axes show how the start
+      points and the first moves differ; fitted on the whole paths, the big moves to the attractors dominate
+    - The PCA is a rotation of the state space, so distances and arrow lengths are distances between states (in
+      standardised units): arrows join kept states about *arrow spacing* steps apart. Target images (stars) only
+      with RGBA, since they have no hidden channels. *Axes range: start points* fits the axes to the start points
+    - Below: share of the variance per component, and what the first components are (where in the grid, and which
+      channels)
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    pca_channels = mo.ui.radio({"all channels": "all", "RGBA only": "rgba"}, value="all channels", label="Channels",
+                               inline=True)
+    pca_standardize = mo.ui.checkbox(value=True, label="Standardise each channel")
+    pca_fit = mo.ui.radio({"whole paths": "all", "first steps": "first", "start states": "start"},
+                          value="whole paths", label="Fit on", inline=True)
+    pca_first = mo.ui.number(1, 8192, value=16, step=1, label="first … steps")
+    pca_every = mo.ui.number(1, 64, value=4, step=1, label="Keep every … steps")
+    pca_view = mo.ui.radio({"whole paths": "all", "start points": "start"}, value="whole paths", label="Axes range",
+                           inline=True)
+    pca_run = mo.ui.run_button(label="Compute PCA")
+    mo.vstack([
+        mo.hstack([pca_channels, pca_standardize, pca_every, pca_run], justify="start", gap=1.5, wrap=True),
+        mo.hstack([pca_fit, pca_first, pca_view], justify="start", gap=1.5, wrap=True),
+    ])
+    return pca_channels, pca_every, pca_first, pca_fit, pca_run, pca_standardize, pca_view
+
+
+@app.cell
+def _():
+    # PCAs computed in this session, keyed by their settings
+    pca_cache = {}
+    return (pca_cache,)
+
+
+@app.cell(hide_code=True)
+def _(
+    base_seed,
+    eval_seed,
+    explore_cfg,
+    explore_footprint,
+    explore_id,
+    explore_length,
+    explore_names,
+    explore_pair_target,
+    explore_repeats,
+    explore_seeds,
+    explore_targets,
+    get_model,
+    hidden_base,
+    memory_budget,
+    parameter_noise,
+    pca_cache,
+    pca_channels,
+    pca_every,
+    pca_first,
+    pca_fit,
+    pca_run,
+    pca_standardize,
+    picker,
+    start_weights,
+    velocity_between,
+    velocity_between_n,
+    velocity_starts,
+):
+    _steps = explore_length.value * explore_cfg.run.t
+    # Keep every … steps must divide the run length
+    _every = math.gcd(_steps, int(pca_every.value))
+    _chosen = np.array([[picker.value[_name] for _name in ("r", "g", "b", "a")]], dtype=np.float32)
+    # The chosen colour and the specific start point only matter when they are start signals
+    _key = (explore_id, parameter_noise.value, explore_length.value, hidden_base.value, eval_seed.value,
+            explore_repeats.value, tuple(velocity_starts.value), velocity_between.value, velocity_between_n.value,
+            tuple(np.round(_chosen[0], 4)) if -1 in velocity_starts.value else None,
+            tuple(start_weights.value) if -2 in velocity_starts.value else None,
+            pca_channels.value, pca_standardize.value, pca_fit.value, pca_first.value, _every)
+    if pca_run.value and _key not in pca_cache and (velocity_starts.value or velocity_between.value):
+        _model = get_model(explore_id, parameter_noise.value)
+        _repeats = explore_repeats.value
+
+        def _run(states, shared_key=False):
+            return ma.rollout_states(_model, states, _steps, jr.PRNGKey(eval_seed.value), every=_every,
+                                     memory_gb=memory_budget.value, shared_key=shared_key)
+
+        # The same batches and keys as in the velocity map, so the runs are the same
+        _paths, _runs = [], []
+        with mo.status.spinner("Rolling out the start signals and keeping their states"):
+            _seed_ids = [_s for _s in velocity_starts.value if _s >= 0]
+            _all_seeds = _run(np.repeat(explore_seeds, _repeats, axis=0)) if _seed_ids else None
+            for _start in velocity_starts.value:
+                if _start == -1:
+                    _label, _colour = "chosen colour", "black"
+                    _states = _run(np.repeat(ma.coloured_seeds(base_seed, explore_footprint, _chosen), _repeats, axis=0))
+                elif _start == -2:
+                    _label, _colour = "specific start point", SPECIAL_COLOUR
+                    _states = _run(np.repeat(ma.mixed_states(base_seed, explore_targets, [start_weights.value]),
+                                             _repeats, axis=0))
+                else:
+                    _label = f"seed {_start} → {explore_names[int(explore_pair_target[_start])]}"
+                    _colour = outcome_colour(int(explore_pair_target[_start]))
+                    _states = _all_seeds[_start * _repeats:(_start + 1) * _repeats]
+                _paths.append({"label": _label, "colour": _colour, "style": LINESTYLES[len(_paths) % len(LINESTYLES)]})
+                _runs.append(_states)
+            if velocity_between.value:
+                # As in the velocity map: N seeds evenly between every two training seeds, same keys for all
+                _t = np.arange(1, velocity_between_n.value + 1) / (velocity_between_n.value + 1)
+                _meta = [(_a, _b, _x) for _a, _b in itertools.combinations(range(len(explore_seeds)), 2) for _x in _t]
+                _mixed = np.array([(1 - _x) * explore_seeds[_a] + _x * explore_seeds[_b] for _a, _b, _x in _meta])
+                _between = _run(_mixed, shared_key=True)
+                _colours = np.clip(ma.seed_colours(_mixed, explore_footprint)[:, :3], 0.0, 1.0)
+                _seed_colours = ma.seed_colours(explore_seeds, explore_footprint)[:, :3]
+                for (_a, _b, _x), _states, _c in zip(_meta, _between, _colours):
+                    if np.abs(_seed_colours[_a] - _seed_colours[_b]).max() < 0.05:
+                        _c = (1 - _x) * np.array(to_rgb(outcome_colour(int(explore_pair_target[_a])))) \
+                            + _x * np.array(to_rgb(outcome_colour(int(explore_pair_target[_b]))))
+                    _paths.insert(0, {"label": None, "colour": to_hex(_c), "style": "-", "small": True})
+                    _runs.insert(0, _states[None])
+        _frames = _runs[0].shape[1]
+        _all = np.concatenate([_r.reshape(-1, *_r.shape[2:]) for _r in _runs])
+        _step = np.tile(np.arange(_frames) * _every, len(_all) // _frames)
+        _fit = {"all": np.ones(len(_all), bool), "first": _step <= pca_first.value, "start": _step == 0}[pca_fit.value]
+        with mo.status.spinner(f"PCA of {len(_all)} states ({_fit.sum()} fitted)"):
+            _pca = ma.state_pca(_all, _fit, channels=None if pca_channels.value == "all" else [0, 1, 2, 3],
+                                standardize=pca_standardize.value, n_components=10)
+        _offset = 0
+        for _path, _r in zip(_paths, _runs):
+            _path["pcs"] = _pca["scores"][_offset:_offset + _r.shape[0] * _frames].reshape(_r.shape[0], _frames, -1)
+            _offset += _r.shape[0] * _frames
+        pca_cache[_key] = {
+            "paths": _paths, "explained": _pca["explained"], "components": _pca["components"],
+            "channels": _pca["channels"], "n_states": len(_all), "n_fit": _pca["n_fit"],
+            "features": int(np.prod(_pca["components"].shape[1:])), "every": _every,
+            "targets": ma.pca_project(_pca, explore_targets) if pca_channels.value == "rgba" else None,
+        }
+        del _all, _runs
+    pca_result = pca_cache.get(_key)
+    mo.md("Press **Compute PCA** (uses the start signals of the velocity map and the length, hidden channels, noise "
+          "and memory settings above; the states are rolled out again and kept every "
+          f"{_every} steps).") if pca_result is None else None
+    return (pca_result,)
+
+
+@app.cell(hide_code=True)
+def _(explore_names, pca_result, pca_view, velocity_stride):
+    mo.stop(pca_result is None)
+    mo.stop(len(pca_result["explained"]) < 2,
+            mo.md("The fitted states vary in fewer than two directions; fit on more states."))
+    _paths = pca_result["paths"]
+    _k = len(pca_result["explained"])
+    _planes = [(0, 1), (0, 2), (1, 2)] if _k >= 3 else [(0, 1)]
+    _stride = max(1, round(velocity_stride.value / pca_result["every"]))
+    _zoom = pca_view.value == "start"
+    _limits = pca_limits(_paths, pca_result["targets"], pca_view.value)
+    _width = 4.6 * len(_planes) + 2.8
+    _fig, _axes = plt.subplots(1, len(_planes), figsize=(_width, 5.0), squeeze=False)
+    for _ax, (_a, _b) in zip(_axes.flat, _planes):
+        pca_plane(_ax, _a, _b, _paths, pca_result["explained"], _stride, _limits, targets=pca_result["targets"],
+                  names=explore_names, zoom=_zoom)
+    _fig.tight_layout(rect=(0, 0, 1 - 2.8 / _width, 0.93), w_pad=3)
+    _between = [_p for _p in _paths if _p.get("small")]
+    _legend = similarity_legend(_paths)
+    if _between:
+        _legend.append(Line2D([], [], color=_between[len(_between) // 2]["colour"], lw=1.5,
+                              label=f"{len(_between)} colours between the trained seeds"))
+    if pca_result["targets"] is None:
+        _legend = [_h for _h in _legend if _h.get_label() != "target image"]
+    _fig.legend(handles=_legend, loc="center left", bbox_to_anchor=(1 - 2.7 / _width, 0.5), frameon=False, fontsize=8)
+    _fig.suptitle(("start points (axes fitted to them, x and y scaled separately)" if _zoom else "whole paths")
+                  + f"; arrows every {_stride * pca_result['every']} steps", fontsize=9)
+
+    _fig_variance, _ax = plt.subplots(figsize=(4.2, 3.0))
+    _ax.bar(np.arange(1, _k + 1), pca_result["explained"], color="#2a78d6")
+    _ax.plot(np.arange(1, _k + 1), np.cumsum(pca_result["explained"]), color=INK_SECONDARY, marker="o", ms=3,
+             label="cumulative")
+    _ax.set_xticks(np.arange(1, _k + 1), [f"PC{_c}" for _c in range(1, _k + 1)], fontsize=7)
+    _ax.set_ylim(0, 1)
+    _ax.set_ylabel("share of the variance")
+    _ax.legend(frameon=False, fontsize=8)
+    style_axes(_ax)
+    _fig_variance.tight_layout()
+
+    _channels = "all channels" if len(pca_result["channels"]) > 4 else "RGBA"
+    mo.vstack([
+        mo.md(f"{pca_result['n_states']} states ({pca_result['n_fit']} of them fitted), {pca_result['features']} "
+              f"numbers each ({_channels}); PC1–PC{min(3, _k)} explain "
+              f"{np.sum(pca_result['explained'][:3]):.0%} of the variance of the fitted states."),
+        _fig,
+        mo.hstack([_fig_variance, pca_components_figure(pca_result)], justify="start", align="start", wrap=True),
+    ])
     return
 
 

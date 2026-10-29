@@ -28,6 +28,8 @@ needs from the scan and plot scripts:
 - the colour sweeps of the scans (``colour_sweeps``), with more alphas where the
   outcome changes (``adaptive_sweeps``, ``boundary_windows``), for the plots of
   ``plot_steps_vs_spectrum_en.py`` and ``plot_steps_vs_spectrum_dynamic.py``
+- a PCA of the full states along the runs (``rollout_states``, ``state_pca``,
+  ``pca_project``)
 """
 
 from dataclasses import replace
@@ -452,6 +454,137 @@ def rollout_until_stable(model, states, targets, key, memory_gb=1.0, shifts=None
         "final_class": out["final_class"],
         "final": out["final"],
     }
+
+
+# ----------------------------------------------------------------------
+# PCA of the states: which directions in the full state (all channels and pixels) the runs
+# move along. The states are kept every few steps; the PCA is computed from the Gram
+# matrix of the fitted states, so it needs memory for samples x samples, not features^2.
+
+@eqx.filter_jit
+def _states_batch(model, states, keys, steps, stride):
+    """The full state of every run every ``stride`` steps, including the seed. Step t uses the
+    same key as in ``rollout``, so the runs are the same as there."""
+    def single(state, key):
+        def step(state, index):
+            return model(state, lambda x: x, key=jax.random.fold_in(key, index)), None
+
+        def frame(state, start):
+            state, _ = jax.lax.scan(step, state, start + jnp.arange(stride))
+            return state, state
+
+        _, frames = jax.lax.scan(frame, state, stride * jnp.arange(steps // stride))
+        return jnp.concatenate([state[None], frames])
+
+    return jax.vmap(single)(states, keys)
+
+
+def rollout_states(model, states, steps, key, every=4, memory_gb=1.0, shared_key=False, dtype=np.float16):
+    """Roll out each seed in ``states`` [N, C, H, W] for ``steps`` updates and keep its full
+    state (all channels) every ``every`` steps: [N, steps // every + 1, C, H, W] in ``dtype``
+    (float16 halves the memory). With the same ``key`` and ``shared_key`` and the same batch
+    of seeds, the runs are the same as in ``rollout``."""
+    if steps % every:
+        raise ValueError(f"steps ({steps}) must be a multiple of every ({every})")
+    count = len(states)
+    states, keys, _, chunk = _padded_batches(states, key, None, model, memory_gb, shared_key)
+    # The kept states also take device memory: at most about memory_gb / 2 of them per chunk
+    per_seed = 4 * (steps // every + 1) * int(np.prod(states.shape[1:]))
+    chunk = max(1, min(chunk, int(memory_gb * 2**29 // per_seed)))
+    padding = -count % chunk
+    states = np.concatenate([states[:count], np.zeros((padding, *states.shape[1:]), np.float32)])
+    keys = jnp.concatenate([keys[:count], jnp.repeat(keys[:1], padding, axis=0)])
+    frames = []
+    for start in range(0, len(states), chunk):
+        block = _states_batch(model, jnp.asarray(states[start : start + chunk]), keys[start : start + chunk],
+                              int(steps), int(every))
+        frames.append(np.asarray(block).astype(dtype))
+    return np.concatenate(frames)[:count]
+
+
+def state_pca(states, fit, channels=None, standardize=True, n_components=10, block=256):
+    """PCA of states [n, C, H, W] (any float dtype), fitted on the states where ``fit`` [n] is
+    True and applied to all of them.
+
+    ``channels``: the channels used (None: all). ``standardize``: every channel is divided by
+    its standard deviation over the fitted states and pixels, so channels with large values
+    (often the hidden ones) do not dominate; within a channel the pixels keep their relative
+    scale. Returns a dict with ``scores`` [n, k] (the coordinates of every state), ``explained``
+    [k] (fraction of the fitted variance), ``components`` [k, C', H, W] (unit vectors in the
+    standardised space), ``mean`` [C', H, W], ``scale`` [C'], ``channels`` and ``n_fit``.
+    """
+    channels = list(range(states.shape[1])) if channels is None else list(channels)
+    rows = np.flatnonzero(np.asarray(fit, bool))
+    if len(rows) < 2:
+        raise ValueError("the PCA needs at least two fitted states")
+    shape = (len(channels), *states.shape[2:])
+    features = int(np.prod(shape))
+
+    def take(index):
+        return np.asarray(states[index][:, channels], dtype=np.float64).reshape(len(index), -1)
+
+    blocks = [rows[a : a + block] for a in range(0, len(rows), block)]
+    mean = sum(take(index).sum(axis=0) for index in blocks) / len(rows)
+    if standardize:
+        pixels = features // len(channels)
+        squares = sum(((take(index) - mean) ** 2).reshape(len(index), len(channels), pixels).sum(axis=(0, 2))
+                      for index in blocks)
+        scale = np.sqrt(squares / (len(rows) * pixels))
+        scale = np.where(scale > 1e-12, scale, 1.0)
+    else:
+        scale = np.ones(len(channels))
+    weights = np.repeat(1.0 / scale, features // len(channels))
+
+    def centred(index):
+        return (take(index) - mean) * weights
+
+    # Gram matrix of the centred fitted states, block by block
+    gram = np.zeros((len(rows), len(rows)))
+    starts = np.cumsum([0] + [len(index) for index in blocks])
+    for a, index_a in enumerate(blocks):
+        data_a = centred(index_a)
+        for b in range(a, len(blocks)):
+            data_b = data_a if a == b else centred(blocks[b])
+            product = data_a @ data_b.T
+            gram[starts[a]:starts[a + 1], starts[b]:starts[b + 1]] = product
+            gram[starts[b]:starts[b + 1], starts[a]:starts[a + 1]] = product.T
+    values, vectors = np.linalg.eigh(gram)
+    order = np.argsort(values)[::-1][: min(n_components, len(rows))]
+    values, vectors = np.clip(values[order], 0.0, None), vectors[:, order]
+    singular = np.sqrt(values)
+    keep = singular > 1e-12 * max(singular.max(), 1e-300)
+    values, vectors, singular = values[keep], vectors[:, keep], singular[keep]
+    # Components V = X^T U / s, block by block
+    components = np.zeros((features, len(values)))
+    for a, index in enumerate(blocks):
+        components += centred(index).T @ (vectors[starts[a]:starts[a + 1]] / singular)
+    # A fixed sign: the largest loading of every component is positive
+    signs = np.sign(components[np.abs(components).argmax(axis=0), np.arange(components.shape[1])])
+    components *= np.where(signs == 0, 1.0, signs)
+    scores = np.concatenate([centred(np.arange(a, min(a + block, len(states)))) @ components
+                             for a in range(0, len(states), block)])
+    return {
+        "scores": scores,
+        "explained": values / max(np.trace(gram), 1e-300),
+        "components": components.T.reshape(len(values), *shape),
+        "mean": mean.reshape(shape),
+        "scale": scale,
+        "weights": weights,
+        "channels": channels,
+        "n_fit": len(rows),
+    }
+
+
+def pca_project(pca, states):
+    """Coordinates of further states [m, C'', H, W] in a ``state_pca``: the PCA's channels are
+    taken from them, channels they lack (e.g. the hidden channels of a target image) count as 0."""
+    states = np.asarray(states, dtype=np.float64)
+    full = np.zeros((len(states), len(pca["channels"]), *states.shape[2:]))
+    for k, channel in enumerate(pca["channels"]):
+        if channel < states.shape[1]:
+            full[:, k] = states[:, channel]
+    centred = (full.reshape(len(states), -1) - pca["mean"].ravel()) * pca["weights"]
+    return centred @ pca["components"].reshape(len(pca["components"]), -1).T
 
 
 # ----------------------------------------------------------------------

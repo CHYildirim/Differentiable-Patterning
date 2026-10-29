@@ -11,9 +11,9 @@
 # v2: optimiser settings as in emoji_attractor_switch_gating_v3 (4 restarts,
 # small random initial values, rollout curriculum, attractor_contrast
 # objective, l2 = 0.01, batch 8).
-experiment_name: emoji_attractor_switch_target_effect_v2
+experiment_name: emoji_attractor_switch_target_effect_v3
 entrypoint: Experiments.impulse.optimise:run
-output_subdir: generated/emoji_attractor_switch_target_effect_v2
+output_subdir: generated/emoji_attractor_switch_target_effect_v3
 seed_mode: index
 
 # All ordered (source, target) pairs, as indices into data.emoji.pairs
@@ -71,13 +71,6 @@ grid:
   impulse.loss.regularisers.l2: [0.001]
   impulse.repeat: [0]
 groups:
-  - impulse.intervention.patch_size: [9]
-    impulse.intervention.duration: [1]
-    impulse.intervention.budget: [81]
-  - impulse.rollout.steps: [256, 512]
-    impulse.rollout.loss_window: [64, 128]
-    impulse.rollout.scan_kind: [lax, checkpointed]
-    impulse.rollout.checkpoints: [null, 512]
   - impulse.intervention.patch_size: [9]
     impulse.intervention.duration: [1]
     impulse.intervention.budget: [81]
