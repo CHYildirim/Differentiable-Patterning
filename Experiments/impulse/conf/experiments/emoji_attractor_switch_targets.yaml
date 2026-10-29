@@ -74,10 +74,10 @@ groups:
   - impulse.intervention.patch_size: [9]
     impulse.intervention.duration: [1]
     impulse.intervention.budget: [81]
-  - impulse.rollout.steps: [256,512]
-    impulse.rollout.loss_window: [64,128]
-    impulse.rollout.scan_kind: [lax,checkpointed]
-    impulse.rollout.checkpoints: [null, 512]
+  - impulse.rollout.steps: [512]
+    impulse.rollout.loss_window: [128]
+    impulse.rollout.scan_kind: [checkpointed]
+    impulse.rollout.checkpoints: [512]
 # One branch per model: its transitions and W&B tags for filtering
 branches:
   - when: {checkpoint.model_id: 20261026T040356Z-cfge66af73e8a70-42e3ad4b}
