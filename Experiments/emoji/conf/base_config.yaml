@@ -110,7 +110,9 @@ loss:
     localised_hidden: 0.0 #
     update_sensitivity: 0.0 #when doing singalling but makes it more expensive
     perturbation_conservation: 0.0
-    hidden_state_size: 0.0 
+    hidden_state_size: 0.0
+    # aNCA/gaNCA only: cost per cell update (mean learned firing probability).
+    firing_energy: 0.0
 run:
   t: 64
   derive_t_from_fire_rate: false

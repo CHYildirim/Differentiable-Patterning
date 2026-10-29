@@ -5,9 +5,12 @@
 # Fill the REPLACE_* slots with bundle IDs. Each ID appears twice: once in
 # the grid and once in its branch, which picks the transitions for its
 # attractor count. Placeholders must stay distinct until replaced.
-experiment_name: emoji_attractor_switch_gating_v1
+#
+# v3 (compare with v2): 4 restarts, small random initial values, rollout
+# curriculum, attractor_contrast objective, l2 = 0.01, batch 8.
+experiment_name: emoji_attractor_switch_gating_v3
 entrypoint: Experiments.impulse.optimise:run
-output_subdir: generated/emoji_attractor_switch_gating_v1
+output_subdir: generated/emoji_attractor_switch_gating_v3
 seed_mode: index
 
 # All ordered (source, target) pairs, as indices into data.emoji.pairs
@@ -27,57 +30,62 @@ transitions:
 
 grid:
   checkpoint.model_id:
-    - REPLACE_K2_NCA
-    - REPLACE_K2_gNCA
-    - REPLACE_K3_NCA
-    - REPLACE_K3_gNCA
-    - REPLACE_K4_NCA
-    - REPLACE_K4_gNCA
-    - REPLACE_K5_NCA
-    - REPLACE_K5_gNCA
-  impulse.iterations: [8000]
+    - 20261022T142152Z-cfgcef8472c82ef-32f4ecde
+    - 20261024T150505Z-cfg0d4e9d3c9d80-52c43b23
+    - 20261021T153732Z-cfg5bbef516d707-ed8a35d2
+    - 20261025T161633Z-cfg271c5c53e5b7-1fb00d10
+    - 20261022T155716Z-cfg9f6913e71d29-9a2f7f63
+    - 20261024T032207Z-cfg49e4af4e33e2-899feaed
+  impulse.iterations: [4000]
+  impulse.batch_size: [8]
   impulse.pair_source.type: [stable_attractor]
-  impulse.objective.type: [targeted]
+  impulse.objective.type: [attractor_contrast]
+  impulse.objective.contrast_weight: [0.1]
   # impulse.rollout.steps: [256]
   # impulse.rollout.loss_window: [64]
   impulse.rollout.evaluation_steps: [1024]
+  # Keep every 32nd frame of the long evaluation rollout (smaller states.npz)
+  impulse.rollout.evaluation_frame_every: [32]
+  impulse.rollout.curriculum: [true]
   impulse.optimiser.learn_rate: [0.01]
   impulse.intervention.channels: [all]
   impulse.intervention.spatial: [patch]
+  impulse.intervention.init_scale: [0.05]
+  impulse.intervention.restarts: [8]
+  impulse.intervention.scout_fraction: [0.1]
   # impulse.intervention.patch_size: [3]
-  impulse.loss.regularisers.l2: [0.0, 0.1]
+  # A small l2 keeps the impulse from growing without bound (state_range
+  # would also penalise hidden channels that are negative in the attractor)
+  impulse.loss.regularisers.l2: [0.001]
   impulse.repeat: [0]
 groups:
-  - impulse.intervention.patch_size: [3, 1, 6, 3, 2, 1, 9, 3, 1]
-    impulse.intervention.duration: [1, 9, 1, 4, 9, 36, 1, 9, 81]
-    impulse.intervention.budget: [9, 9, 36, 36, 36, 36, 81, 81, 81]
-  - impulse.rollout.steps: [128,256,512]
-    impulse.rollout.loss_window: [32,64,128]
-    impulse.rollout.scan_kind: [lax,lax,checkpointed]
-    impulse.rollout.checkpoints: [null, null, 512]
+  # - impulse.intervention.patch_size: [3, 1, 6, 3, 2, 1, 9, 3, 1]
+  #   impulse.intervention.duration: [1, 9, 1, 4, 9, 36, 1, 9, 81]
+  #   impulse.intervention.budget: [9, 9, 36, 36, 36, 36, 81, 81, 81]
+  - impulse.intervention.patch_size: [ 9,9]
+    impulse.intervention.duration: [ 1,5]
+    impulse.intervention.budget: [ 81, 405]
+  - impulse.rollout.steps: [512]
+    impulse.rollout.loss_window: [128]
+    impulse.rollout.scan_kind: [checkpointed]
+    impulse.rollout.checkpoints: [512]
 # One branch per model: its transitions and W&B tags for filtering
 branches:
-  - when: {checkpoint.model_id: REPLACE_K2_NCA}
+  - when: {checkpoint.model_id: 20261022T142152Z-cfgcef8472c82ef-32f4ecde}
     grid: {logging.wandb.tags: [[family:NCA, attractors:2]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_K2_gNCA}
+  - when: {checkpoint.model_id: 20261024T150505Z-cfg0d4e9d3c9d80-52c43b23}
     grid: {logging.wandb.tags: [[family:gNCA, attractors:2]]}
     groups: [*k2]
-  - when: {checkpoint.model_id: REPLACE_K3_NCA}
+  - when: {checkpoint.model_id: 20261021T153732Z-cfg5bbef516d707-ed8a35d2}
     grid: {logging.wandb.tags: [[family:NCA, attractors:3]]}
     groups: [*k3]
-  - when: {checkpoint.model_id: REPLACE_K3_gNCA}
+  - when: {checkpoint.model_id: 20261025T161633Z-cfg271c5c53e5b7-1fb00d10}
     grid: {logging.wandb.tags: [[family:gNCA, attractors:3]]}
     groups: [*k3]
-  - when: {checkpoint.model_id: REPLACE_K4_NCA}
+  - when: {checkpoint.model_id: 20261022T155716Z-cfg9f6913e71d29-9a2f7f63}
     grid: {logging.wandb.tags: [[family:NCA, attractors:4]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_K4_gNCA}
+  - when: {checkpoint.model_id: 20261024T032207Z-cfg49e4af4e33e2-899feaed}
     grid: {logging.wandb.tags: [[family:gNCA, attractors:4]]}
     groups: [*k4]
-  - when: {checkpoint.model_id: REPLACE_K5_NCA}
-    grid: {logging.wandb.tags: [[family:NCA, attractors:5]]}
-    groups: [*k5]
-  - when: {checkpoint.model_id: REPLACE_K5_gNCA}
-    grid: {logging.wandb.tags: [[family:gNCA, attractors:5]]}
-    groups: [*k5]

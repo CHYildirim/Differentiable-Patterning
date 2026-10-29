@@ -223,8 +223,9 @@ def publish_impulse_record(
             target_states=np.asarray(result.target_states),
             perturbed_initial_states=np.asarray(result.perturbed_initial_states),
             final_states=np.asarray(result.final_states),
-            baseline_trajectory=np.asarray(result.baseline_trajectory),
-            perturbed_trajectory=np.asarray(result.perturbed_trajectory),
+            # Saved as float16 to keep records small (observed channels are in [0, 1])
+            baseline_trajectory=np.asarray(result.baseline_trajectory, dtype=np.float16),
+            perturbed_trajectory=np.asarray(result.perturbed_trajectory, dtype=np.float16),
             # Centre (row, column, 0 to 1) at each optimisation step; local and patch only
             **({} if result.location_history is None
                else {"location_history": np.asarray(result.location_history)}),
@@ -274,6 +275,9 @@ def publish_impulse_record(
             "results": {
                 "best_step": int(result.best_step),
                 "best_loss": float(result.best_loss),
+                "best_validation_objective": (
+                    None if result.best_validation_objective is None else float(result.best_validation_objective)
+                ),
                 "evaluation_steps": impulse.rollout.evaluation_steps,
                 "evaluation_loss": float(result.evaluation_loss),
                 "baseline_evaluation_loss": float(result.baseline_evaluation_loss),
