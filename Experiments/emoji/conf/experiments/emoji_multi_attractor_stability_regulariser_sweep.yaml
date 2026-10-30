@@ -26,7 +26,7 @@ grid:
 
   logging.wandb.project: [NCA-emoji-multi-attractor]
 
-  model.family: [gNCA]
+  model.family: [NCA]
   # logging.wandb.tags: [[gNCA]]
 
   model.channels: [64]
