@@ -696,6 +696,9 @@ def test_attractor_contrast_objective_prefers_the_target_over_the_source_and_far
     assert value(far, contrast_only) < 1e-6
     with pytest.raises(ValueError, match="rollout states"):
         objective(0.0, 0.0, {})
+    # The unweighted contrast term, as logged under Loss/contrast
+    states = jnp.broadcast_to(attractors[0], (2, 4, 3, 3))
+    assert jnp.isclose(objective(0.0, 0.0, {}, states), objective.contrast(states))
 
 
 def test_curriculum_trains_on_a_quarter_to_all_of_the_rollout():
@@ -716,8 +719,19 @@ def test_curriculum_trains_on_a_quarter_to_all_of_the_rollout():
 
     stages = [optimiser._stage_rollout(index, 8) for index in range(8)]
     assert stages == [(2, 1), (2, 1), (4, 2), (4, 2), (6, 3), (6, 3), (8, 4), (8, 4)]
-    result = optimiser.train(iterations=8, batch_size=1, key=jax.random.PRNGKey(1), evaluation_steps=8)
+    logged = []
+
+    class StageLogger(TrainingLogger):
+        def log_training(self, metrics, step, log_every):
+            logged.append(metrics["rollout_steps"])
+
+    optimiser.logger = StageLogger()
+    result = optimiser.train(
+        iterations=8, batch_size=1, key=jax.random.PRNGKey(1), evaluation_steps=8, log_every=2
+    )
     assert result.evaluation_loss < result.baseline_evaluation_loss
+    # The training loss is logged at the length of the current stage
+    assert logged == [2, 4, 6, 8]
     # The first stage (2 steps, window 1) leaves room for a 2-step impulse only
     multistep = dict(arguments, model=AdditiveModel(channels=4))
     NCAImpulseOptimiser(intervention=_patch_impulse(1, (0.5, 0.5), duration=2), **multistep)
@@ -772,3 +786,60 @@ def test_best_intervention_is_chosen_on_the_evaluation_rollout():
     assert result.best_step == 0
     assert result.best_validation_objective == 0.0
     assert jnp.allclose(result.best_intervention.values, 0.0)
+
+
+def _impulse(spatial, lattice=9, value=1.0, **options):
+    """An all-channel impulse on a 2-channel lattice with every value set to ``value``."""
+
+    intervention = perturbation(
+        mode={"channel": "all", "spatial": spatial},
+        CHANNELS=2,
+        OBS_CHANNELS=2,
+        x=jnp.zeros((1, 2, lattice, lattice)),
+        WIDTH=1.0,
+        key=jax.random.PRNGKey(0),
+        **options,
+    )
+    return eqx.tree_at(lambda item: item.values, intervention, jnp.full_like(intervention.values, value))
+
+
+def test_sparse_impulse_changes_a_centred_grid_of_single_pixels():
+    states = jnp.zeros((1, 2, 9, 9))
+
+    sparse = _impulse("sparse", STRIDE=3)(states)
+
+    assert _impulse("sparse", STRIDE=3).values.shape == (1, 2, 3, 3)
+    expected = jnp.zeros((9, 9)).at[1::3, 1::3].set(1.0)
+    assert jnp.array_equal(sparse, jnp.broadcast_to(expected, (1, 2, 9, 9)))
+    # Stride 1 is every pixel: the same as a global impulse
+    assert jnp.array_equal(_impulse("sparse", STRIDE=1)(states), _impulse("global")(states))
+
+
+def test_several_patches_add_up_to_their_single_patch_deltas():
+    centres = jnp.array([[0.25, 0.25], [0.75, 0.5]])
+    pair = eqx.tree_at(lambda item: item.location, _impulse("patch", PATCH_SIZE=3, PATCHES=2), jax.scipy.special.logit(centres))
+    singles = [
+        eqx.tree_at(lambda item: item.location, _impulse("patch", PATCH_SIZE=3), jax.scipy.special.logit(centre))
+        for centre in centres
+    ]
+    states = jnp.zeros((1, 2, 9, 9))
+
+    assert pair.values.shape == (1, 2, 2, 3, 3) and pair.get_location().shape == (2, 2)
+    # One patch keeps the shapes of earlier impulse records
+    assert singles[0].values.shape == (1, 2, 3, 3) and singles[0].location.shape == (2,)
+    assert jnp.allclose(pair.deltas(states), singles[0].deltas(states) + singles[1].deltas(states), atol=1e-6)
+
+    @eqx.filter_grad
+    def gradient(candidate):
+        return jnp.sum(candidate(states)[0, 0] * jnp.arange(81.0).reshape((9, 9)))
+
+    # Each centre has a gradient of its own
+    assert jnp.all(jnp.abs(gradient(pair).location) > 0)
+
+
+def test_patches_start_at_separate_random_centres():
+    centres = _impulse("patch", PATCH_SIZE=3, PATCHES=4).get_location()
+
+    assert centres.shape == (4, 2)
+    assert len({tuple(centre.tolist()) for centre in centres}) == 4
+    assert jnp.all((centres >= 0.1) & (centres <= 0.9))

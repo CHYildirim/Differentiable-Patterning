@@ -14,7 +14,9 @@ Run from the repository root with:
 
 Reads the impulse records written by ``Experiments/impulse/optimise.py`` and
 the model bundles they link to, both from the model store (``MODEL_STORE_ROOT``,
-default ``models/``; see ``docs/model_registry.md``). Emoji images are read
+default ``models/``; see ``docs/model_registry.md``). Models without impulse
+runs can be picked from a model selection file (exported by
+``Experiments/model_registry_explorer.py``), e.g. for the graft test. Emoji images are read
 from ``DATA_PATH_BASE``. The computations are in
 ``Experiments/impulse/analysis.py``. Old flat result files are read by
 ``impulse_sweep_explorer.py`` instead.
@@ -37,15 +39,17 @@ with app.setup(hide_code=True):
     from Experiments.impulse.analysis import (
         add_state_noise,
         distance_over_time,
+        graft_switch_map,
         grow_attractors,
         load_model_and_data,
+        load_registry_model,
         move_intervention,
         scale_intervention,
         success_rate,
         switch_matrix,
     )
     from Experiments.impulse.config_helpers import pixel_steps
-    from Experiments.model_registry import ModelRegistry
+    from Experiments.model_registry import ModelRegistry, load_selection
 
     plt.style.use("default")
 
@@ -122,10 +126,6 @@ def _(experiment_choice, registry):
                 "record": _record,
             }
         )
-    model_ids = sorted({result["model_id"] for result in results})
-    model_choice = mo.ui.dropdown(
-        model_ids, value=model_ids[0] if model_ids else None, label="Model"
-    )
     _rows = [
         {
             "run": result["name"],
@@ -143,8 +143,45 @@ def _(experiment_choice, registry):
         }
         for result in results
     ]
-    mo.vstack([mo.md(f"{len(results)} impulse runs"), mo.ui.table(_rows, selection=None), model_choice])
-    return model_choice, results
+    mo.vstack([mo.md(f"{len(results)} impulse runs"), mo.ui.table(_rows, selection=None)])
+    return (results,)
+
+
+@app.cell
+def _():
+    selection_path = mo.ui.text(
+        value="models/emoji_attractor_switch_gating_models.yaml",
+        label="Model selection file (optional)",
+        full_width=True,
+    )
+    mo.vstack(
+        [
+            mo.md("- Models come from this selection file and from the impulse runs above\n- Swap the file to change the group"),
+            selection_path,
+        ]
+    )
+    return (selection_path,)
+
+
+@app.cell
+def _(results, selection_path):
+    _path = selection_path.value.strip()
+    _selected = list(load_selection(_path)) if _path and os.path.isfile(_path) else []
+    _runs = {}
+    for _result in results:
+        _runs[_result["model_id"]] = _runs.get(_result["model_id"], 0) + 1
+    # Label -> model ID: selection models first, in file order, then models with runs only
+    _options = {}
+    for _record in _selected:
+        _model_id = _record["model_id"]
+        _options[f"{_record.get('family')} | {_model_id} | {_runs.get(_model_id, 0)} impulse runs"] = _model_id
+    _listed = set(_options.values())
+    for _model_id in sorted(set(_runs) - _listed):
+        _options[f"{_model_id} | {_runs[_model_id]} impulse runs"] = _model_id
+    model_choice = mo.ui.dropdown(_options, value=next(iter(_options), None), label="Model")
+    _note = f"- {len(_selected)} models in the selection file" if _path and os.path.isfile(_path) else "- No selection file found"
+    mo.vstack([mo.md(_note), model_choice])
+    return (model_choice,)
 
 
 @app.cell
@@ -181,13 +218,18 @@ def _(results):
 
 @app.cell
 def _(model_choice, registry, results, store_root):
-    mo.stop(model_choice.value is None, mo.md("No impulse results found"))
+    mo.stop(model_choice.value is None, mo.md("No models: set a selection file or pick impulse experiments"))
     model_results = [result for result in results if result["model_id"] == model_choice.value]
-    # Checks the bundle holds the exact weights the impulses were optimised for
-    model_results[0]["record"].verify_model(registry)
-    model, trajectories, observed_channels = load_model_and_data(
-        model_results[0]["config"], store_root=store_root.value or None
-    )
+    if model_results:
+        # Checks the bundle holds the exact weights the impulses were optimised for
+        model_results[0]["record"].verify_model(registry)
+        model, trajectories, observed_channels = load_model_and_data(
+            model_results[0]["config"], store_root=store_root.value or None
+        )
+    else:
+        model, trajectories, observed_channels = load_registry_model(
+            model_choice.value, store_root=store_root.value or None
+        )
     interventions = {result["name"]: result["record"].load_intervention() for result in model_results}
     pattern_count = len(trajectories)
     mo.md(f"{len(model_results)} runs, {pattern_count} patterns, {model.N_CHANNELS} channels")
@@ -248,6 +290,7 @@ def _(attractors, evaluation_steps, interventions, key, model, model_results, ob
 
 @app.cell
 def _(model_results):
+    mo.stop(not model_results, mo.md("No impulse runs for this model"))
     run_choice = mo.ui.dropdown([result["name"] for result in model_results], value=model_results[0]["name"], label="Impulse")
     frame_count = mo.ui.slider(4, 16, value=8, label="Frames shown")
     mo.hstack([run_choice, frame_count])
@@ -313,7 +356,8 @@ def _(chosen):
     noise_levels = mo.ui.text(value="0, 0.01, 0.05, 0.1, 0.2", label="State noise (sd)")
     location_grid = mo.ui.number(start=2, stop=12, value=5, label="Position grid size (local impulses)")
     run_robustness = mo.ui.run_button(label="Compute robustness")
-    _local = chosen["config"].impulse.intervention.spatial in ("local", "patch")
+    # The position panel moves one centre: local impulses and single patches only
+    _local = chosen["config"].impulse.intervention.spatial in ("local", "patch") and chosen["config"].impulse.intervention.patches == 1
     mo.vstack([mo.hstack([scales, noise_levels] + ([location_grid] if _local else [])), run_robustness])
     return location_grid, noise_levels, run_robustness, scales
 
@@ -363,7 +407,7 @@ def _(
         )
         for _index, value in enumerate(_noise)
     ]
-    _local = chosen["config"].impulse.intervention.spatial in ("local", "patch")
+    _local = chosen["config"].impulse.intervention.spatial in ("local", "patch") and chosen["config"].impulse.intervention.patches == 1
     _fig, _axes = plt.subplots(1, 3 if _local else 2, figsize=(13 if _local else 9, 3.2))
     _axes[0].plot(_scales, np.asarray(_scale_rates), marker="o")
     _axes[0].set_xlabel("impulse scale")
@@ -393,6 +437,75 @@ def _(
         _fig.colorbar(_image, ax=_axes[2])
     _fig.tight_layout()
     _fig
+    return
+
+
+@app.cell
+def _(pattern_count):
+    graft_source = mo.ui.number(start=0, stop=pattern_count - 1, value=0, label="Source pattern")
+    graft_target = mo.ui.number(start=0, stop=pattern_count - 1, value=min(1, pattern_count - 1), label="Target pattern")
+    graft_sizes = mo.ui.text(value="5, 9, 17, 25, 33, full", label="Window sizes (pixels)")
+    graft_grid = mo.ui.number(start=1, stop=12, value=4, label="Centre grid size")
+    run_graft = mo.ui.run_button(label="Compute graft test")
+    mo.vstack(
+        [
+            mo.md(
+                "- Graft test: copy the target's grown state into a k x k window of the grown source, then run on\n"
+                "- A k x k graft is a one-step k x k patch impulse, so it is the best such an impulse can do"
+            ),
+            mo.hstack([graft_source, graft_target, graft_sizes, graft_grid]),
+            run_graft,
+        ]
+    )
+    return graft_grid, graft_sizes, graft_source, graft_target, run_graft
+
+
+@app.cell
+def _(
+    attractors,
+    evaluation_steps,
+    graft_grid,
+    graft_sizes,
+    graft_source,
+    graft_target,
+    key,
+    model,
+    observed_channels,
+    references,
+    run_graft,
+):
+    mo.stop(not run_graft.value, mo.md("Press the button to run"))
+    # "full": a window larger than the lattice wherever it is centred
+    _full = 2 * max(attractors.shape[-2:])
+    _sizes = [_full if _value.strip() == "full" else int(_value) for _value in graft_sizes.value.split(",")]
+    _labels = ["full" if _size == _full else f"{_size} px" for _size in _sizes]
+    _n = int(graft_grid.value)
+    _positions = (np.arange(_n) + 0.5) / _n
+    _rates = graft_switch_map(
+        model,
+        attractors[int(graft_source.value)],
+        attractors[int(graft_target.value)],
+        references,
+        int(graft_target.value),
+        _sizes,
+        [(_y, _x) for _y in _positions for _x in _positions],
+        int(evaluation_steps.value),
+        observed_channels,
+        jax.random.fold_in(key, 6),
+    ).reshape((len(_sizes), _n, _n))
+    _fig, _axes = plt.subplots(1, len(_sizes), figsize=(2.6 * len(_sizes), 2.8), squeeze=False)
+    for _axis, _label, _map in zip(_axes[0], _labels, _rates):
+        _axis.imshow(_map, vmin=0, vmax=1, cmap="Blues", extent=(0, 1, 1, 0))
+        _axis.set_title(f"{_label}: best {_map.max():.2f}", fontsize=9)
+    _fig.suptitle(f"Fraction ending at pattern {int(graft_target.value)}, by window centre", fontsize=10)
+    _fig.tight_layout()
+    _switching = [_label for _label, _map in zip(_labels, _rates) if _map.max() >= 0.5]
+    mo.vstack(
+        [
+            mo.md(f"- Smallest window that switches at least half the samples: **{_switching[0] if _switching else 'none'}**"),
+            _fig,
+        ]
+    )
     return
 
 
