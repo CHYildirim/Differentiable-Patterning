@@ -275,6 +275,9 @@ def upgrade_legacy_config(value: Mapping[str, Any]) -> dict[str, Any]:
       schedule_iterations}``. Version 10 has fractions of ``run.iterations``
       (``*_fraction``); each count is divided by ``run.iterations``. The emoji
       ramp length ``schedule_iterations`` becomes its end point, ``end_fraction``.
+      Old emoji schedules could run past ``run.iterations`` (short test runs
+      kept the default 1000 + 4000 iterations); they are cut at the end of the
+      run so that every trained iteration keeps its probability.
     * Loss terms once had ``epsilon``, ``metric``, ``normalize``, ``tau`` and
       ``amplitude_penalty`` options that no loss uses now. They are dropped when
       they hold their old default values.
@@ -392,7 +395,28 @@ def _iterations_to_fractions(root: dict[str, Any]) -> dict[str, Any]:
                     schedule["schedule_iterations"] += schedule.get("start_iteration", 0)
                 to_fraction(schedule, "start_iteration", "start_fraction")
                 to_fraction(schedule, "schedule_iterations", "end_fraction")
+                _cut_schedule_at_run_end(schedule)
     return root
+
+
+def _cut_schedule_at_run_end(schedule: dict[str, Any]) -> None:
+    """Cut a version-9 emoji schedule that ran past run.iterations.
+
+    * A schedule that starts after the last iteration was never on, so it
+      becomes start_fraction = end_fraction = 1.
+    * A ramp cut off by the end of the run now ends there, at the
+      probability it had reached, so the ramp keeps its slope.
+    """
+    start = schedule.get("start_fraction", 0.0)
+    end = schedule.get("end_fraction", 0.0)
+    if start is None or end is None or end <= 1:
+        return
+    if start < 1 and "initial_probability" in schedule and "final_probability" in schedule:
+        initial = schedule["initial_probability"]
+        final = schedule["final_probability"]
+        schedule["final_probability"] = initial + (1 - start) / (end - start) * (final - initial)
+    schedule["start_fraction"] = min(start, 1.0)
+    schedule["end_fraction"] = 1.0
 
 
 def _upgrade_from_version_1(root: dict[str, Any]) -> dict[str, Any]:

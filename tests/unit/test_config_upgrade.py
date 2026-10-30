@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import jax.numpy as jnp
 import pytest
 import yaml
 
@@ -12,6 +13,8 @@ from Experiments.config import (
     impulse_experiment_config_from_mapping,
     upgrade_legacy_config,
 )
+from NCA.trainer.data_augmenter.emoji import schedule_probability
+from NCA.trainer.data_augmenter.transforms import scheduled_probability
 
 
 def _current_micropattern_config():
@@ -128,6 +131,38 @@ def test_version_9_iteration_counts_become_the_same_iterations():
     assert iterations(config.data.emoji.terminal_carry.start_fraction) == 1000
     # The ramp of 3333 iterations from 1000 ends at 4333.
     assert iterations(config.data.emoji.terminal_carry.end_fraction) == 4333
+
+
+@pytest.mark.parametrize(
+    "iterations",
+    [
+        100,  # starts after the run (old cluster-test bundles)
+        1000,  # starts on the iteration after the last one
+        3000,  # ramp cut off by the end of the run
+        16000,  # whole ramp inside the run
+    ],
+)
+def test_version_9_emoji_schedules_keep_their_probabilities(iterations):
+    value = yaml.safe_load(Path("Experiments/emoji/conf/base_config.yaml").read_text())
+    value["schema_version"] = 9
+    value["run"]["iterations"] = iterations
+    terminal = value["data"]["emoji"]["terminal_carry"]
+    del terminal["start_fraction"], terminal["end_fraction"]
+    terminal.update(
+        enabled=True,
+        start_iteration=1000,
+        schedule_iterations=4000,
+        initial_probability=0.5,
+        final_probability=0.9,
+    )
+
+    config = experiment_config_from_mapping(value)
+
+    steps = jnp.arange(iterations)
+    # Version 9 passed the iteration counts straight to scheduled_probability.
+    old = scheduled_probability(steps, 1000, 4000, 0.5, 0.9)
+    new = schedule_probability(config.data.emoji.terminal_carry, steps, iterations)
+    assert jnp.allclose(new, old, atol=1e-6)
 
 
 def test_current_layout_rejects_iteration_counts():
