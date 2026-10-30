@@ -41,9 +41,9 @@ grid:
 
 groups:
   # budget: perturbed pixels (k * k, or the whole lattice)
-  - impulse.intervention.spatial: [patch, patch, patch, patch, patch, patch, patch, patch, global]
-    impulse.intervention.patch_size: [5, 9, 11, 15, 21, 31, 41, 61, 3]
-    impulse.intervention.budget: [25, 81, 121, 225, 441, 961, 1681, 3721, 14400]
-    impulse.intervention.initial_location: [random, random, random, random, centre, centre, centre, centre, random]
+  - impulse.intervention.spatial: [patch, patch, patch, patch, patch, patch, patch, global]
+    impulse.intervention.patch_size: [5, 9, 15, 21, 31, 41, 61, 3]
+    impulse.intervention.budget: [25, 81, 225, 441, 961, 1681, 3721, 14400]
+    impulse.intervention.initial_location: [random, random, random, centre, centre, centre, centre, random]
     # A global impulse has no centre to search
-    impulse.intervention.restarts: [4, 4, 4, 4, 4, 4, 4, 4, 1]
+    impulse.intervention.restarts: [4, 4, 4, 4, 4, 4, 4, 1]
